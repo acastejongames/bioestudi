@@ -69,6 +69,10 @@ async function runMode(mode, { mistakeFirst = false } = {}) {
   check(G.state().total >= (mode === "test" ? 10 : mode === "match" ? 3 : 1), `${mode}: nombre mínim de preguntes respostes`);
   return G;
 }
+function checkNoRepeats(mode) {
+  const ids = G.state().list.map((q) => q.id);
+  check(new Set(ids).size === ids.length, `${mode}: cap pregunta repetida dins la partida (${ids.length} preguntes úniques)`);
+}
 
 (async () => {
   console.log("== init ==");
@@ -83,17 +87,21 @@ async function runMode(mode, { mistakeFirst = false } = {}) {
   check(S.xp > 0, `XP guanyada (${S.xp})`);
   check(Object.keys(S.blocks).length >= 3, "blocs actualitzats: " + JSON.stringify(S.blocks));
   check(Object.keys(S.stats).length >= 8, `stats espaiats creats (${Object.keys(S.stats).length} claus)`);
-  check(G.dueKeys().length > 0, `hi ha repàs pendent (${G.dueKeys().length})`);
+  checkNoRepeats("session");
+  check(G.dueKeys().length === 0, "sessió perfecta: NO deixa repàs pendent al moment (sense molesta/bucle)");
+  check(window.document.getElementById("rStarsNote").hidden, "nota ⭐ oculta quan la sessió ha estat sense errors");
 
   // mini test oficial perfecte
   await runMode("test");
   check(G.hits() === 10, `mini test perfecte (${G.hits()}/10)`);
+  checkNoRepeats("test");
 
   // sessió amb error primer → retry
   await runMode("session", { mistakeFirst: true });
   const missed = G.missed();
   check(missed.length >= 1, `errors registrats (${missed.length})`);
   check(G.dueKeys().length > 0, `repàs pendent després de l'error (${G.dueKeys().length})`);
+  check(!window.document.getElementById("rStarsNote").hidden, "nota ⭐ visible quan hi ha errors");
   G.startMode("retry", [...missed], "retry");
   check(G.inGame(), "mode retry obert");
   check(spin(), "retry completat");
@@ -102,6 +110,7 @@ async function runMode(mode, { mistakeFirst = false } = {}) {
   // altres modes
   await runMode("arcade", { mistakeFirst: true });
   check(G.state().hearts <= 2, "vides penalitzades a l'arcade");
+  check(G.state().list.length > 0 && G.state().list.length <= 25, `arcade amb ${G.state().list.length} preguntes úniques (≤25, sense bucle)`);
 
   await runMode("match");
   await runMode("teach");
@@ -141,6 +150,7 @@ async function runMode(mode, { mistakeFirst = false } = {}) {
     }
     check(G.done(), `arcade ${secId}: completada`);
     check(seen.size === 1 && seen.has(secId), `arcade ${secId}: només preguntes d'aquesta secció (${[...seen].join(",")})`);
+    checkNoRepeats(`arcade ${secId}`);
   }
 
   // flashcards filtrades (lipo) i parells (hidro)
@@ -154,6 +164,7 @@ async function runMode(mode, { mistakeFirst = false } = {}) {
     if (G.state().graded) G.advance(); else G.auto();
   }
   check(G.done() && lipoKeys.size === 1 && lipoKeys.has("lipo"), `flashcards lipo: filtrades (${[...lipoKeys].join(",")})`);
+  checkNoRepeats("teach lipo");
 
   G.startMode("match", null, null, "hidro");
   let n3 = 0;
@@ -162,6 +173,7 @@ async function runMode(mode, { mistakeFirst = false } = {}) {
     if (G.state().graded) G.advance(); else G.auto();
   }
   check(G.done() && G.hits() === 3, `parells hidro: 3 rondes completades (${G.hits()}/3)`);
+  checkNoRepeats("match hidro");
 
   // orgmix
   G.startMode("orgmix", null, null, "organitzacio");
@@ -171,6 +183,7 @@ async function runMode(mode, { mistakeFirst = false } = {}) {
     if (G.state().graded) G.advance(); else G.auto();
   }
   check(G.done() && G.hits() === 7, `ordre & conceptes: 7 reptes (${G.hits()}/7)`);
+  checkNoRepeats("orgmix");
 
   // sortir d'una partida de secció torna a la secció
   G.startMode("arcade", null, null, "minerals");

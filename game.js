@@ -31,7 +31,8 @@ function sched(key, ok) {
   const st = S.stats[key] || { stage: 0, due: 0, star: false, seen: 0 };
   st.seen++;
   if (ok) {
-    st.due = Date.now() + [0, 1, 3, 7][Math.min(st.stage, 3)] * DAY;
+    /* repàs del mateix dia, però NO de seguida: evita que la mateixa pregunta torni a aparèixer sempre al moment */
+    st.due = Date.now() + [0.25, 1, 3, 7][Math.min(st.stage, 3)] * DAY;
     st.stage = Math.min(st.stage + 1, 4);
     st.star = false;
   } else {
@@ -144,6 +145,27 @@ function distract(correct, n, pool) {
   }
   return out;
 }
+/* evita preguntes repetides dins d'una mateixa partida */
+function dedupeById(list) {
+  const seen = new Set(), out = [];
+  for (const q of list) {
+    if (q.id && seen.has(q.id)) continue;
+    if (q.id) seen.add(q.id);
+    out.push(q);
+  }
+  return out;
+}
+/* genera preguntes úniques fins a max (o fins a esgotar variants) */
+function uniqueGen(gen, max, tries) {
+  const seen = new Set(), out = [];
+  tries = tries || 400;
+  for (let i = 0; i < tries && out.length < max; i++) {
+    const q = gen();
+    if (seen.has(q.id)) continue;
+    seen.add(q.id); out.push(q);
+  }
+  return out;
+}
 function finishMc(o, block, items, info, id) {
   const all = shuffle([o.correct, ...o.distractors]);
   return { tipus: "mc", block, prompt: o.prompt, options: all, correct: all.indexOf(o.correct), info: info || "", items, id: id || "mc:" + rnd(1e9) };
@@ -194,18 +216,38 @@ function mkMcFor(pool, it, kind) {
     correct = r.nom; vals = others.map((x) => x.nom);
     info = `Manca: ${r.def}`;
   }
-  return finishMc({ prompt, correct, distractors: distract(correct, 3, vals) }, pool.block, [it.key], info);
+  return finishMc({ prompt, correct, distractors: distract(correct, 3, vals) }, pool.block, [it.key], info, `mc:${pool.kind}:${it.key}:${kind}`);
 }
 function mkMcOrg() {
-  const kind = pick(["next", "seq", "emergent"]);
+  const kind = pick(["next", "seq", "emergent", "grup"]);
   const n = BIO.nivells;
   if (kind === "seq") {
-    const correct = "Àtom → molècula → orgànul";
+    const chains = [
+      { c: "Àtom → molècula → orgànul", w: ["Molècula → àtom → orgànul", "Àtom → orgànul → molècula", "Orgànul → molècula → àtom"], info: "Després: cèl·lula → teixit → òrgan → aparell → organisme." },
+      { c: "Cèl·lula → teixit → òrgan", w: ["Teixit → cèl·lula → òrgan", "Cèl·lula → òrgan → teixit", "Òrgan → teixit → cèl·lula"], info: "Després: aparell → organisme. Abans: orgànul → cèl·lula." },
+      { c: "Població → ecosistema → bioma", w: ["Ecosistema → població → bioma", "Població → bioma → ecosistema", "Bioma → ecosistema → població"], info: "Abans: organisme → població." },
+    ];
+    const ch = pick(chains);
     return finishMc({
       prompt: "Quina seqüència de nivells és correcta?",
-      correct,
-      distractors: ["Molècula → àtom → orgànul", "Àtom → orgànul → molècula", "Orgànul → molècula → àtom"],
-    }, "organitzacio", [ORG_SEQ.key], "Després: cèl·lula → teixit → òrgan → aparell → organisme.");
+      correct: ch.c, distractors: ch.w,
+    }, "organitzacio", [ORG_SEQ.key], ch.info, "mc:org:seq:" + norm(ch.c).replace(/ /g, "-"));
+  }
+  if (kind === "grup") {
+    const groups = [
+      { nom: "Peces químiques", members: ["Àtom", "Molècula", "Orgànul"] },
+      { nom: "Cos viu: de la unitat a l'individu", members: ["Cèl·lula", "Teixit", "Òrgan", "Aparell", "Organisme"] },
+      { nom: "Escala ecològica", members: ["Població", "Ecosistema", "Bioma"] },
+    ];
+    const g = pick(groups), m = pick(g.members);
+    const others = groups.filter((x) => x !== g).map((x) => x.nom);
+    return finishMc({
+      prompt: `A quin grup de nivells pertany «${m}»?`,
+      correct: g.nom,
+      distractors: [...others, "Cap: no és un nivell del temari"],
+    }, "organitzacio", [ORG_SEQ.key],
+      "Guia: peces químiques (àtom → molècula → orgànul) · cos viu (cèl·lula → teixit → òrgan → aparell → organisme) · escala ecològica (població → ecosistema → bioma).",
+      "mc:org:grup:" + m);
   }
   if (kind === "emergent") {
     return finishMc({
@@ -216,7 +258,7 @@ function mkMcOrg() {
         "Una funció que només tenen els organismes més grans, com els aparells.",
         "El nivell d'organització més alt: l'ecosistema sencer.",
       ],
-    }, "organitzacio", [ORG_EMER.key], BIO.propietatEmergent);
+    }, "organitzacio", [ORG_EMER.key], BIO.propietatEmergent, "mc:org:emergent");
   }
   let i = rnd(n.length - 1);
   const forward = rnd(2) === 0;
@@ -227,7 +269,7 @@ function mkMcOrg() {
     prompt: `Quin nivell d'organització ve ${word} de «${subject}»?`,
     correct,
     distractors: distract(correct, 3, n),
-  }, "organitzacio", [ORG_SEQ.key], "Seqüència: " + n.join(" → "));
+  }, "organitzacio", [ORG_SEQ.key], "Seqüència: " + n.join(" → "), `mc:org:q:${subject}:${forward ? "f" : "b"}`);
 }
 function mkMcAny(kind) {
   if (kind === "organitzacio") return mkMcOrg();
@@ -424,39 +466,34 @@ function sectionSheet(id) {
 }
 
 /* ============ construcció de modes ============ */
+const GLOBAL_KINDS = ["minerals", "minerals", "vitamines", "vitamines", "vitamines", "nutrients", "organitzacio"];
 function buildList(mode, section) {
   const sec = section || null;
   if (mode === "session") {
     if (sec === "organitzacio") {
-      const mix = shuffle([mkMcOrg(), mkMcOrg(), mkOrder(), mkMcOrg(), mkMcOrg(), mkOrder(), mkMcOrg()]);
-      return [mkOrder(), ...mix];
+      return [mkOrder(), ...shuffle(uniqueGen(mkMcOrg, 7))];
     }
     if (sec) {
-      const mix = shuffle([
-        mkMcSection(sec), mkMcSection(sec), mkMcSection(sec),
-        mkMcSection(sec), mkMcSection(sec), mkMatchSection(sec),
-      ]);
-      return [mkFlashSection(sec), mkFlashSection(sec), ...mix];
+      const mid = shuffle(dedupeById([
+        mkMatchSection(sec), mkFlashSection(sec),
+        ...uniqueGen(() => mkMcSection(sec), 6),
+      ]));
+      return dedupeById([mkFlashSection(sec), ...mid]);
     }
-    const mix = [
-      mkMcAny("minerals"), mkMcAny("minerals"), mkMcAny("vitamines"), mkMcAny("vitamines"),
-      mkMcAny("vitamines"), mkMcAny("nutrients"), mkMcAny("nutrients"), mkMcAny("organitzacio"),
-      mkOrder(), mkMatch(), mkFlash(),
-    ];
-    return [mkFlash(), ...shuffle(mix), mkMiniFields()];
+    const mid = shuffle(dedupeById([
+      mkMatch(), mkOrder(), mkFlash(),
+      ...uniqueGen(() => mkMcAny(pick(GLOBAL_KINDS)), 8),
+    ]));
+    return dedupeById([mkFlash(), ...mid, mkMiniFields()]);
   }
   if (mode === "arcade") {
-    if (sec) return Array.from({ length: 40 }, () => mkMcSection(sec));
-    const kinds = ["minerals", "minerals", "vitamines", "vitamines", "vitamines", "nutrients", "organitzacio"];
-    return shuffle(Array.from({ length: 40 }, () => mkMcAny(pick(kinds))));
+    if (sec) return shuffle(uniqueGen(() => mkMcSection(sec), 25));
+    return shuffle(uniqueGen(() => mkMcAny(pick(GLOBAL_KINDS)), 25));
   }
   if (mode === "test") return TEST.map(fromTest);
   if (mode === "teach") {
-    if (sec) return Array.from({ length: 8 }, () => mkFlashSection(sec));
-    const list = [];
-    POOLS.forEach((p) => { list.push(mkFlash(p), mkFlash(p)); });
-    list.push(mkFlash(POOLS[0]), mkFlash(POOLS[1]));
-    return shuffle(list);
+    if (sec) return uniqueGen(() => mkFlashSection(sec), 8);
+    return shuffle(uniqueGen(() => mkFlash(pick(POOLS)), 10));
   }
   if (mode === "match") {
     if (sec) {
@@ -468,15 +505,15 @@ function buildList(mode, section) {
     return shuffle(MATCH_POOLS).slice(0, 3).map((p) => mkMatch(p, 4));
   }
   if (mode === "orgmix") {
-    return [mkOrder(), mkMcOrg(), mkMcOrg(), mkOrder(), mkMcOrg(), mkOrder(), mkMcOrg()];
+    return [mkOrder(), ...shuffle(uniqueGen(mkMcOrg, 6))];
   }
   if (mode === "review") {
     let keys = dueKeys().sort((a, b) => (S.stats[a].due - S.stats[b].due));
     if (sec) keys = keys.filter((k) => sectionItemKeys(sec).includes(k));
     keys = keys.slice(0, 14);
     if (!keys.length) {
-      if (sec) return Array.from({ length: 6 }, () => mkMcSection(sec));
-      return shuffle(Array.from({ length: 6 }, () => mkMcAny(pick(["minerals", "vitamines", "nutrients", "organitzacio"]))));
+      if (sec) return uniqueGen(() => mkMcSection(sec), 6);
+      return shuffle(uniqueGen(() => mkMcAny(pick(GLOBAL_KINDS)), 6));
     }
     return shuffle(keys.map((k) => (CATALOG[k] ? CATALOG[k].mk() : mkMcAny("minerals"))));
   }
@@ -508,7 +545,7 @@ function startMode(mode, customList, label, section) {
   R.mode = mode;
   if (!customList) R.section = section || null;
   else R.section = section !== undefined ? section : R.section || null;
-  R.list = customList || buildList(mode, R.section);
+  R.list = dedupeById(customList || buildList(mode, R.section));
   if (!R.list.length) { show("home"); renderHome(); return; }
   R.i = 0; R.score = 0; R.combo = 0; R.maxCombo = 0;
   R.hits = 0; R.total = 0; R.hearts = 3; R.missed = [];
@@ -531,7 +568,8 @@ function render() {
   if (!q) return finish();
   R.revealed = false; R.graded = false; R.matchSel = null; R.matchDone = 0; R.matchErr = 0;
   R.orderAns = []; R.orderOk = null;
-  $("qKind").textContent = q.kindLabel || KIND_LABELS[q.tipus] || "Pregunta";
+  $("qKind").textContent = R.mode === "arcade" ? "⚡ Pregunta ràpida · " + R.i + "/" + R.list.length
+    : (q.kindLabel || KIND_LABELS[q.tipus] || "Pregunta");
   $("qPrompt").innerHTML = esc(q.prompt).replace(/\n/g, "<br>");
   $("qBody").innerHTML = "";
   const fb = $("qFeedback"); fb.hidden = true; fb.innerHTML = "";
@@ -900,8 +938,8 @@ function finish() {
   $("rXp").textContent = "+" + xpGain;
   const stars = starKeys().length;
   const sn = $("rStarsNote");
-  sn.hidden = !stars;
-  sn.innerHTML = `⭐ Tens <b>${stars}</b> pregunta${stars > 1 ? "s" : ""} marcada${stars > 1 ? "s" : ""} per repassar: avui, demà, als 3 dies i a la setmana.`;
+  sn.hidden = !R.missed.length || !stars;
+  if (!sn.hidden) sn.innerHTML = `⭐ Tens <b>${stars}</b> pregunta${stars > 1 ? "s" : ""} marcada${stars > 1 ? "s" : ""} per repassar: avui, demà, als 3 dies i a la setmana.`;
   const list = $("rList");
   list.innerHTML = "";
   const seenIds = new Set();
@@ -1107,6 +1145,12 @@ function init() {
     R.section
   );
   $("sndBtn").onclick = () => { S.sound = !S.sound; save(); renderHud(); if (S.sound) sfx("click"); };
+  $("resetBtn").onclick = () => {
+    if (confirm("Segur? S'esborrarà tot: XP, estrelles, dominis i repàs espaiat.")) {
+      try { localStorage.removeItem(KEY); } catch (e) {}
+      location.reload();
+    }
+  };
   renderHome();
   show("home");
 }

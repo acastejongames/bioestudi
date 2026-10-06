@@ -329,6 +329,10 @@ table.sheet.cover td.ans.rev .v { filter: none; opacity: 1; }
 }
 .sec-tip b { color: var(--c2); }
 
+.danger-zone { text-align: center; margin: 20px 0 6px; }
+.danger-zone .btn { color: var(--mut); font-weight: 500; font-size: 13px; }
+.danger-zone .btn:hover { color: var(--bad); border-color: var(--bad); }
+
 /* ===== resultat ===== */
 .result-card {
   max-width: 680px; margin: 26px auto; text-align: center;

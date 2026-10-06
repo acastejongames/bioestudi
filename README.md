@@ -1,5 +1,7 @@
 # 🧬 BIOESTUDI · El joc de la memòria
 
+🌐 **En línia:** https://acastejongames.github.io/bioestudi/
+
 Un joc per estudiar la **Biologia** de la Guia d'estudi: nivells d'organització, sals minerals,
 vitamines i nutrients orgànics. Tècnica inclosa: **recorda sense mirar → comprova → repeteix**.
 
@@ -43,6 +45,12 @@ Cada secció té la **taula d'estudi completa** amb el mecanisme *tapa i recorda
 - **BLOC 4** Nutrients orgànics (glúcids, proteïnes, greixos, àcids nucleics)
 
 El progrés (XP, nivell, ratxa, % per secció i repàs espaiat) es desa a `localStorage`.
+
+## 🌍 Publicació (GitHub Pages)
+
+El lloc està preparat per a GitHub Pages: fitxers estàtics a l'arrel, `.nojekyll` present i **rutes relatives** (funciona sota `https://acastejongames.github.io/bioestudi/`).
+
+Fonts de desplegament: branca `arena/062a1875-bioestudi` → arrel (`/`).
 
 ## Tests
 

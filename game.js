@@ -249,10 +249,13 @@ function mkOrder() {
     seq: BIO.nivells, items: [ORG_SEQ.key], info: "Seqüència: " + BIO.nivells.join(" → "), id: "org:order",
   };
 }
-function mkMatch(pool, n) {
+function mkMatch(pool, n, filterFn) {
   pool = pool || pick(MATCH_POOLS);
   n = n || 4;
-  const src = shuffle(pool.src()).slice(0, Math.min(n, pool.src().length));
+  let srcAll = pool.src();
+  if (pool.filter) srcAll = srcAll.filter(pool.filter);
+  if (filterFn) srcAll = srcAll.filter(filterFn);
+  const src = shuffle(srcAll).slice(0, Math.min(n, srcAll.length));
   const pairs = src.map((i) => ({ l: pool.left(i), r: pool.right(i) }));
   return {
     tipus: "match", block: pool.block, prompt: pool.title, pairs,
@@ -289,9 +292,152 @@ POOLS.forEach((p) => p.items.forEach((it) => {
 CATALOG[ORG_SEQ.key] = { block: "organitzacio", mk: () => (rnd(2) ? mkMcOrg() : mkOrder()) };
 CATALOG[ORG_EMER.key] = { block: "organitzacio", mk: () => mkMcOrg() };
 
+/* ============ SECCIONS DEL TEMARI ============ */
+const SECTIONS = [
+  {
+    id: "organitzacio", ico: "🧬", title: "Nivells d'organització",
+    sub: "De l'àtom al bioma · propietats emergents",
+    truc: "Peces químiques → cos viu → escala ecològica: agrupa'ls en 3 cadenes i encadenaràs tots els nivells.",
+  },
+  {
+    id: "minerals", ico: "🧂", title: "Sals minerals",
+    sub: "Calci · magnesi · potassi · sodi · fòsfor · ferro",
+    truc: BIO.trucs.minerals,
+    conf: [BIO.confusions[0], BIO.confusions[1]],
+  },
+  {
+    id: "hidro", ico: "💊", title: "Vitamines hidrosolubles",
+    sub: "B1 · B2 · B5 · B6 · B9 · B12 · C",
+    truc: BIO.trucs.hidro,
+    conf: ["B9 i B12 connecten amb ADN i eritròcits: no les confonguis en les mancances (megaloblàstica vs neurològica)."],
+  },
+  {
+    id: "lipo", ico: "☀️", title: "Vitamines liposolubles",
+    sub: "KEDA · K · E · D · A",
+    truc: BIO.trucs.lipo,
+    conf: [BIO.confusions[2], BIO.confusions[0]],
+  },
+  {
+    id: "nutrients", ico: "🌾", title: "Nutrients orgànics",
+    sub: "Glúcids · proteïnes · greixos · àcids nucleics",
+    truc: BIO.resumNutrients,
+  },
+];
+function secDef(id) { return SECTIONS.find((s) => s.id === id) || null; }
+function sectionItemKeys(id) {
+  if (id === "minerals") return BIO.minerals.map((m) => "mineral:" + m.id);
+  if (id === "hidro") return BIO.hidro.map((h) => "vit:" + h.id);
+  if (id === "lipo") return BIO.lipo.map((v) => "vit:" + v.id);
+  if (id === "nutrients") return BIO.nutrients.map((n) => "nutrient:" + n.id);
+  if (id === "organitzacio") return ["org:nivells", "org:emergent"];
+  return [];
+}
+function sectionOfKey(k) {
+  if (k.startsWith("mineral:")) return "minerals";
+  if (k.startsWith("nutrient:")) return "nutrients";
+  if (k.startsWith("org:")) return "organitzacio";
+  if (k.startsWith("vit:")) {
+    const id = k.slice(4);
+    return BIO.hidro.some((h) => h.id === id) ? "hidro" : "lipo";
+  }
+  return null;
+}
+function sectionPct(id) {
+  const keys = sectionItemKeys(id);
+  if (!keys.length) return 0;
+  const tot = keys.reduce((a, k) => {
+    const st = S.stats[k];
+    return a + (st ? Math.min(st.stage, 4) / 4 : 0);
+  }, 0);
+  return Math.round((100 * tot) / keys.length);
+}
+function sectionMastery(id) {
+  const keys = sectionItemKeys(id);
+  const dom = keys.filter((k) => S.stats[k] && S.stats[k].stage >= 3).length;
+  const pend = keys.filter((k) => S.stats[k] && (S.stats[k].star || S.stats[k].due <= Date.now())).length;
+  return { total: keys.length, dom, pend };
+}
+function sectionPool(id) {
+  if (id === "minerals") return POOLS[0];
+  if (id === "nutrients") return POOLS[2];
+  if (id === "hidro" || id === "lipo") {
+    const ids = sectionItemKeys(id).map((k) => k.slice(4));
+    return { ...POOLS[1], items: POOLS[1].items.filter((i) => ids.includes(i.ref.id)) };
+  }
+  return null;
+}
+function mkMcSection(id) {
+  if (id === "organitzacio") return mkMcOrg();
+  const p = sectionPool(id);
+  return mkMcFor(p, pick(p.items));
+}
+function mkFlashSection(id) {
+  const p = sectionPool(id);
+  return p ? mkFlash(p, pick(p.items)) : mkOrder();
+}
+function matchPoolsFor(id) {
+  if (id === "minerals") return MATCH_POOLS.filter((p) => p.block === "minerals");
+  if (id === "nutrients") return MATCH_POOLS.filter((p) => p.block === "nutrients");
+  if (id === "hidro" || id === "lipo") {
+    const ids = sectionItemKeys(id).map((k) => k.slice(4));
+    return MATCH_POOLS.filter((p) => p.block === "vitamines").map((p) => ({ ...p, filter: (i) => ids.includes(i.id) }));
+  }
+  return [];
+}
+function mkMatchSection(id, n) {
+  const pools = matchPoolsFor(id);
+  if (!pools.length) return mkOrder();
+  return mkMatch(pick(pools), n || 4);
+}
+function sectionSheet(id) {
+  if (id === "organitzacio") {
+    return {
+      cols: ["Com agrupar-ho per recordar", "Seqüència"],
+      rows: [
+        ["Peces químiques", BIO.nivells.slice(0, 3).join(" → ")],
+        ["Cos viu: de la unitat a l'individu", BIO.nivells.slice(3, 8).join(" → ")],
+        ["Escala ecològica", BIO.nivells.slice(8).join(" → ")],
+        ["Propietat emergent", BIO.propietatEmergent],
+      ],
+    };
+  }
+  if (id === "minerals") {
+    return {
+      cols: ["Mineral", "Funció clau", "Si en falta", "2 fonts clau"],
+      rows: BIO.minerals.map((m) => [m.nom, m.funcio, m.def, m.fonts.join(" · ")]),
+    };
+  }
+  if (id === "hidro" || id === "lipo") {
+    const list = id === "hidro" ? BIO.hidro : BIO.lipo;
+    return {
+      cols: ["Vitamina", "Funció clau", "Si en falta", "2 fonts clau"],
+      rows: list.map((v) => [v.nom, v.funcio, v.def, v.fonts.join(" · ")]),
+    };
+  }
+  if (id === "nutrients") {
+    return {
+      cols: ["Nutrient", "Unitats i què formen", "Funció"],
+      rows: BIO.nutrients.map((n) => [n.nom, n.resumUnitats, n.funcio]),
+    };
+  }
+  return null;
+}
+
 /* ============ construcció de modes ============ */
-function buildList(mode) {
+function buildList(mode, section) {
+  const sec = section || null;
   if (mode === "session") {
+    if (sec === "organitzacio") {
+      const mix = shuffle([mkMcOrg(), mkMcOrg(), mkOrder(), mkMcOrg(), mkMcOrg(), mkOrder(), mkMcOrg()]);
+      return [mkOrder(), ...mix];
+    }
+    if (sec) {
+      const mix = shuffle([
+        mkMcSection(sec), mkMcSection(sec), mkMcSection(sec),
+        mkMcSection(sec), mkMcSection(sec), mkMatchSection(sec),
+      ]);
+      return [mkFlashSection(sec), mkFlashSection(sec), ...mix];
+    }
     const mix = [
       mkMcAny("minerals"), mkMcAny("minerals"), mkMcAny("vitamines"), mkMcAny("vitamines"),
       mkMcAny("vitamines"), mkMcAny("nutrients"), mkMcAny("nutrients"), mkMcAny("organitzacio"),
@@ -300,22 +446,38 @@ function buildList(mode) {
     return [mkFlash(), ...shuffle(mix), mkMiniFields()];
   }
   if (mode === "arcade") {
+    if (sec) return Array.from({ length: 40 }, () => mkMcSection(sec));
     const kinds = ["minerals", "minerals", "vitamines", "vitamines", "vitamines", "nutrients", "organitzacio"];
     return shuffle(Array.from({ length: 40 }, () => mkMcAny(pick(kinds))));
   }
   if (mode === "test") return TEST.map(fromTest);
   if (mode === "teach") {
+    if (sec) return Array.from({ length: 8 }, () => mkFlashSection(sec));
     const list = [];
     POOLS.forEach((p) => { list.push(mkFlash(p), mkFlash(p)); });
     list.push(mkFlash(POOLS[0]), mkFlash(POOLS[1]));
     return shuffle(list);
   }
   if (mode === "match") {
+    if (sec) {
+      const pools = matchPoolsFor(sec);
+      if (!pools.length) return buildList("orgmix", sec);
+      const rounds = pools.length >= 3 ? shuffle(pools).slice(0, 3) : [...shuffle(pools), pools[0]].slice(0, 3);
+      return rounds.map((p) => mkMatch(p, 4));
+    }
     return shuffle(MATCH_POOLS).slice(0, 3).map((p) => mkMatch(p, 4));
   }
+  if (mode === "orgmix") {
+    return [mkOrder(), mkMcOrg(), mkMcOrg(), mkOrder(), mkMcOrg(), mkOrder(), mkMcOrg()];
+  }
   if (mode === "review") {
-    const keys = dueKeys().sort((a, b) => (S.stats[a].due - S.stats[b].due)).slice(0, 14);
-    if (!keys.length) return shuffle(Array.from({ length: 6 }, () => mkMcAny(pick(["minerals", "vitamines", "nutrients", "organitzacio"]))));
+    let keys = dueKeys().sort((a, b) => (S.stats[a].due - S.stats[b].due));
+    if (sec) keys = keys.filter((k) => sectionItemKeys(sec).includes(k));
+    keys = keys.slice(0, 14);
+    if (!keys.length) {
+      if (sec) return Array.from({ length: 6 }, () => mkMcSection(sec));
+      return shuffle(Array.from({ length: 6 }, () => mkMcAny(pick(["minerals", "vitamines", "nutrients", "organitzacio"]))));
+    }
     return shuffle(keys.map((k) => (CATALOG[k] ? CATALOG[k].mk() : mkMcAny("minerals"))));
   }
   return [];
@@ -327,6 +489,7 @@ const R = {
   hits: 0, total: 0, hearts: 3, missed: [], revealed: false, graded: false,
   autoT: null, tick: null, tEnd: 0, tTotal: 0, tLeft: 0,
   matchSel: null, matchDone: 0, matchErr: 0, orderAns: [], orderOk: null,
+  section: null, origin: "session",
 };
 function cur() { return R.list[R.i]; }
 function multOf(c) { return c >= 8 ? 3 : c >= 4 ? 2 : 1; }
@@ -339,20 +502,27 @@ function clearTimers() {
   if (R.autoT) clearTimeout(R.autoT), R.autoT = null;
   if (R.tick) clearInterval(R.tick), R.tick = null;
 }
-function startMode(mode, customList, label) {
+function startMode(mode, customList, label, section) {
   clearTimers();
   if (mode !== "retry") R.origin = mode;
   R.mode = mode;
-  R.list = customList || buildList(mode);
-  if (!R.list.length) { show("home"); return; }
+  if (!customList) R.section = section || null;
+  else R.section = section !== undefined ? section : R.section || null;
+  R.list = customList || buildList(mode, R.section);
+  if (!R.list.length) { show("home"); renderHome(); return; }
   R.i = 0; R.score = 0; R.combo = 0; R.maxCombo = 0;
   R.hits = 0; R.total = 0; R.hearts = 3; R.missed = [];
   show("game");
-  $("gMode").textContent = label || {
+  let modeLabel = label || {
     session: "🎒 Sessió de 20 min", arcade: "⚡ Missió ràpida", match: "🧪 Parells explosius",
     test: "📝 Mini test COMPROVA'T", review: "⭐ Repàs espaiat", teach: "🎓 Explica-ho a algú",
-    retry: "🔁 Torna a provar-les",
+    orgmix: "🧩 Ordre & conceptes", retry: "🔁 Torna a provar-les",
   }[mode] || mode;
+  if (R.section && !label) {
+    const sd = secDef(R.section);
+    if (sd) modeLabel += " · " + sd.ico + " " + sd.title;
+  }
+  $("gMode").textContent = modeLabel;
   render();
 }
 function render() {
@@ -757,7 +927,7 @@ function finish() {
 
 /* ============ navegació / home ============ */
 function show(which) {
-  ["home", "game", "result"].forEach((s) => { $("screen-" + s).hidden = s !== which; });
+  ["home", "game", "result", "section"].forEach((s) => { $("screen-" + s).hidden = s !== which; });
   if (which !== "game") clearTimers();
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
@@ -768,24 +938,23 @@ function renderHud() {
   $("hudStreak").textContent = S.streak || 0;
   $("sndBtn").textContent = S.sound ? "🔊" : "🔇";
 }
-const BLOCK_META = [
-  ["organitzacio", "🧬 Nivells d'organització"],
-  ["minerals", "🧂 Sals minerals"],
-  ["vitamines", "💊 Vitamines"],
-  ["nutrients", "🌾 Nutrients orgànics"],
-];
 function renderHome() {
   renderHud();
-  const grid = $("blockGrid");
+  const grid = $("secGrid");
   grid.innerHTML = "";
-  BLOCK_META.forEach(([k, name]) => {
-    const b = S.blocks[k] || { hit: 0, total: 0 };
-    const pct = b.total ? Math.round((100 * b.hit) / b.total) : 0;
-    const d = document.createElement("div");
-    d.className = "block";
-    d.innerHTML = `<div class="b-name">${name}<span>${pct}%</span></div>
+  SECTIONS.forEach((sec, i) => {
+    const pct = sectionPct(sec.id);
+    const m = sectionMastery(sec.id);
+    const d = document.createElement("button");
+    d.className = "sec-card sc" + (i + 1);
+    d.innerHTML = `
+      <div class="sec-top"><span class="sec-ico">${sec.ico}</span>
+        <span class="sec-name">${esc(sec.title)}</span>
+        <span class="sec-arrow">→</span></div>
+      <div class="sec-sub">${esc(sec.sub)}</div>
       <div class="bar"><i style="width:${pct}%"></i></div>
-      <div class="b-sub">${b.total ? `${b.hit} encerts de ${b.total} preguntes` : "Encara sense dades — juga una partida!"}</div>`;
+      <div class="sec-meta"><span>${pct}% dominat</span><span>${m.dom}/${m.total} ben apreses${m.pend ? ` · ⭐ ${m.pend} per repassar` : ""}</span></div>`;
+    d.onclick = () => openSection(sec.id);
     grid.appendChild(d);
   });
   const due = dueKeys(), stars = starKeys();
@@ -794,12 +963,109 @@ function renderHome() {
     t.innerHTML = `🔁 <b>${due.length}</b> preguntes toquen repàs espaiat` + (stars.length ? ` · ⭐ ${stars.length} marcades` : "");
     btn.hidden = false;
   } else if (!S.played) {
-    t.textContent = "Cap pendent encara. Fes una partida per començar!";
+    t.textContent = "Cap pendent encara. Entra a una secció o fes una partida per començar!";
     btn.hidden = true;
   } else {
     t.textContent = "✅ Tot al dia! Torna demà per mantenir la ratxa 🔥";
     btn.hidden = true;
   }
+}
+
+/* ============ secció ============ */
+function openSection(id) {
+  const sec = secDef(id);
+  if (!sec) return;
+  sfx("click");
+  renderSection(sec);
+  show("section");
+}
+function renderSection(sec) {
+  const pct = sectionPct(sec.id);
+  const m = sectionMastery(sec.id);
+  const sheet = sectionSheet(sec.id);
+  const dueHere = dueKeys().filter((k) => sectionItemKeys(sec.id).includes(k)).length;
+
+  const actions = [
+    { mode: "arcade", ico: "⚡", label: "Missió ràpida" },
+    { mode: "session", ico: "🎒", label: "Sessió" },
+    sec.id === "organitzacio"
+      ? { mode: "orgmix", ico: "🧩", label: "Ordre & conceptes" }
+      : { mode: "teach", ico: "🎓", label: "Flashcards" },
+    sec.id === "organitzacio"
+      ? null
+      : { mode: "match", ico: "🧪", label: "Parells" },
+    dueHere ? { mode: "review", ico: "⭐", label: `Repàs (${dueHere})` } : null,
+  ].filter(Boolean);
+
+  let tableHtml = "";
+  if (sheet) {
+    tableHtml = `
+      <div class="cover-bar">
+        <button class="btn btn-small" id="coverBtn">👁 Mostra-ho tot</button>
+        <span class="cover-hint">${
+          sec.id === "organitzacio"
+            ? "Tapa les cadenes i digues-les senceres des de l'àtom fins al bioma. Toca una casella per revelar-la."
+            : sec.id === "nutrients"
+              ? "Tapa les respostes i completa en veu alta: <b>unitats → què formen → funció</b>. Toca una casella per revelar-la."
+              : "Tapa les respostes i completa en veu alta: <b>funció → deficiència → 2 fonts</b>. Toca una casella per revelar-la."
+        }</span>
+      </div>
+      <div class="sheet-wrap">
+        <table class="sheet cover" id="secSheet">
+          <thead><tr>${sheet.cols.map((c) => `<th>${esc(c)}</th>`).join("")}</tr></thead>
+          <tbody>
+            ${sheet.rows.map((r) => `<tr>${r.map((c, ci) => `<td${ci > 0 ? ' class="ans"' : ""}><span class="v">${esc(c)}</span></td>`).join("")}</tr>`).join("")}
+          </tbody>
+        </table>
+      </div>`;
+  }
+
+  $("secView").innerHTML = `
+    <div class="sec-head">
+      <button class="btn btn-ghost" id="secBack">← Seccions</button>
+      <div class="sec-title"><span class="sec-ico big">${sec.ico}</span> ${esc(sec.title)}</div>
+      <div class="sec-stats">
+        <span>${pct}% dominat</span><span>${m.dom}/${m.total} ben apreses</span>${dueHere ? `<span>⭐ ${dueHere} per repassar</span>` : ""}
+      </div>
+      <div class="bar"><i style="width:${pct}%"></i></div>
+    </div>
+
+    <div class="sec-actions">
+      ${actions.map((a) => `<button class="btn btn-sec" data-mode="${a.mode}">${a.ico} ${a.label}</button>`).join("")}
+    </div>
+
+    <div class="truc-box">💡 <b>Truc:</b> ${esc(sec.truc)}</div>
+    ${(sec.conf || []).map((c) => `<div class="conf-box">⚠️ <b>Confusió:</b> ${esc(c)}</div>`).join("")}
+
+    ${tableHtml}
+
+    <div class="sec-tip">🏋️ Cada partida d'aquesta secció <b>només fa preguntes d'aquí</b>. Recorda: primer intenta de memòria, després comprova.</div>`;
+
+  $("secBack").onclick = () => { sfx("click"); show("home"); renderHome(); };
+  $("secView").querySelectorAll(".btn-sec").forEach((b) => {
+    b.onclick = () => { sfx("click"); startMode(b.dataset.mode, null, null, sec.id); };
+  });
+  const sheetEl = $("secSheet"), coverBtn = $("coverBtn");
+  if (sheetEl && coverBtn) {
+    coverBtn.onclick = () => {
+      const on = sheetEl.classList.toggle("cover");
+      coverBtn.textContent = on ? "👁 Mostra-ho tot" : "🙈 Tapa les respostes";
+      if (!on) sheetEl.querySelectorAll("td.rev").forEach((td) => td.classList.remove("rev"));
+      sfx("click");
+    };
+    sheetEl.querySelectorAll("td.ans").forEach((td) => {
+      td.onclick = () => { td.classList.toggle("rev"); sfx("click"); };
+    });
+  }
+}
+function goHome() {
+  show("home"); renderHome();
+}
+function goBackAfterGame() {
+  if (R.section && secDef(R.section) && R.origin !== "test") {
+    renderSection(secDef(R.section));
+    show("section");
+  } else goHome();
 }
 
 /* ============ clavier ============ */
@@ -830,11 +1096,16 @@ function init() {
     el.onclick = () => { sfx("click"); startMode(el.dataset.mode); };
   });
   $("dueBtn").onclick = () => { sfx("click"); startMode("review"); };
-  $("quitBtn").onclick = () => { clearTimers(); show("home"); renderHome(); };
-  $("logoBtn").onclick = () => { show("home"); renderHome(); };
-  $("rHome").onclick = () => { show("home"); renderHome(); };
-  $("rAgain").onclick = () => startMode(R.origin || "session");
-  $("rRetry").onclick = () => startMode("retry", shuffle(R.missed), "🔁 Torna a provar-les (" + new Set(R.missed.map((m) => m.id)).size + ")");
+  $("quitBtn").onclick = () => { clearTimers(); goBackAfterGame(); };
+  $("logoBtn").onclick = () => { goHome(); };
+  $("rHome").onclick = () => { goHome(); };
+  $("rAgain").onclick = () => startMode(R.origin || "session", null, null, R.section);
+  $("rRetry").onclick = () => startMode(
+    "retry",
+    shuffle(R.missed),
+    "🔁 Torna a provar-les (" + new Set(R.missed.map((m) => m.id)).size + ")",
+    R.section
+  );
   $("sndBtn").onclick = () => { S.sound = !S.sound; save(); renderHud(); if (S.sound) sfx("click"); };
   renderHome();
   show("home");
@@ -844,6 +1115,9 @@ function init() {
 const G = {
   startMode, cur: () => cur(), score: () => R.score, hits: () => R.hits,
   hearts: () => R.hearts, missed: () => R.missed, state: () => R,
+  section: () => R.section,
+  openSection, sectionPct, sectionItemKeys, sectionOfKey, secDef,
+  SECTIONS: () => SECTIONS,
   done: () => !$("screen-result").hidden,
   inGame: () => !$("screen-game").hidden,
   answer, revealFlash, gradeFlash, checkOrder, submitFields, advance,

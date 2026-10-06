@@ -75,7 +75,7 @@ async function runMode(mode, { mistakeFirst = false } = {}) {
   check(G.dueKeys, "API exposta");
   check(!window.document.getElementById("screen-home").hidden, "home visible en iniciar");
   check(window.document.querySelectorAll(".mode-card").length === 6, "6 modes a la portada");
-  check(window.document.querySelectorAll("#blockGrid .block").length === 4, "4 blocs de progrés");
+  check(window.document.querySelectorAll("#secGrid .sec-card").length === 5, "5 seccions a la portada");
 
   // sessió perfecta
   await runMode("session");
@@ -106,6 +106,77 @@ async function runMode(mode, { mistakeFirst = false } = {}) {
   await runMode("match");
   await runMode("teach");
   await runMode("review");
+
+  // ====== SECCIONS ======
+  console.log("\n== seccions ==");
+  const ROWS = { organitzacio: 4, minerals: 6, hidro: 7, lipo: 4, nutrients: 4 };
+  for (const sec of G.SECTIONS()) {
+    G.openSection(sec.id);
+    const scr = window.document.getElementById("screen-section");
+    check(!scr.hidden, `secció ${sec.id}: pantalla oberta`);
+    const rows = window.document.querySelectorAll("#secSheet tbody tr").length;
+    check(rows === ROWS[sec.id], `secció ${sec.id}: taula amb ${rows}/${ROWS[sec.id]} files`);
+    check(window.document.getElementById("secSheet").classList.contains("cover"), `secció ${sec.id}: taula coberta per defecte`);
+    const btns = [...window.document.querySelectorAll(".btn-sec")].map((b) => b.dataset.mode);
+    check(btns.includes("arcade") && btns.includes("session"), `secció ${sec.id}: botons de joc (${btns.join(",")})`);
+    // revelar una casella fent clic
+    const td = window.document.querySelector("#secSheet td.ans");
+    td.click();
+    check(td.classList.contains("rev"), `secció ${sec.id}: clic revela la casella`);
+    // tornar a l'inici
+    window.document.getElementById("secBack").click();
+    check(!window.document.getElementById("screen-home").hidden, `secció ${sec.id}: torna a l'inici`);
+  }
+
+  // partides filtrades per secció
+  for (const secId of ["minerals", "lipo", "hidro", "nutrients", "organitzacio"]) {
+    G.startMode("arcade", null, null, secId);
+    const seen = new Set();
+    let n = 0;
+    while (n++ < 5000) {
+      if (G.done()) break;
+      const q = G.cur();
+      if (q) (q.items || []).forEach((k) => seen.add(G.sectionOfKey(k)));
+      if (G.state().graded) G.advance(); else G.auto();
+    }
+    check(G.done(), `arcade ${secId}: completada`);
+    check(seen.size === 1 && seen.has(secId), `arcade ${secId}: només preguntes d'aquesta secció (${[...seen].join(",")})`);
+  }
+
+  // flashcards filtrades (lipo) i parells (hidro)
+  G.startMode("teach", null, null, "lipo");
+  const lipoKeys = new Set();
+  let n2 = 0;
+  while (n2++ < 500) {
+    if (G.done()) break;
+    const q = G.cur();
+    if (q) (q.items || []).forEach((k) => lipoKeys.add(G.sectionOfKey(k)));
+    if (G.state().graded) G.advance(); else G.auto();
+  }
+  check(G.done() && lipoKeys.size === 1 && lipoKeys.has("lipo"), `flashcards lipo: filtrades (${[...lipoKeys].join(",")})`);
+
+  G.startMode("match", null, null, "hidro");
+  let n3 = 0;
+  while (n3++ < 500) {
+    if (G.done()) break;
+    if (G.state().graded) G.advance(); else G.auto();
+  }
+  check(G.done() && G.hits() === 3, `parells hidro: 3 rondes completades (${G.hits()}/3)`);
+
+  // orgmix
+  G.startMode("orgmix", null, null, "organitzacio");
+  let n4 = 0;
+  while (n4++ < 500) {
+    if (G.done()) break;
+    if (G.state().graded) G.advance(); else G.auto();
+  }
+  check(G.done() && G.hits() === 7, `ordre & conceptes: 7 reptes (${G.hits()}/7)`);
+
+  // sortir d'una partida de secció torna a la secció
+  G.startMode("arcade", null, null, "minerals");
+  window.document.getElementById("quitBtn").click();
+  check(!window.document.getElementById("screen-section").hidden, "sortir d'una partida de secció torna a la secció");
+  check(window.document.getElementById("secView").textContent.includes("Sals minerals"), "la secció de tornada és Sals minerals");
 
   // interaccions reals via esdeveniments (no només auto)
   console.log("\n== interacció amb events ==");

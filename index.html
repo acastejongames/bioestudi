@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="ca">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BIOESTUDI · El joc de la memòria</title>
+  <meta name="theme-color" content="#0b1020" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🧬</text></svg>" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <canvas id="fx"></canvas>
+  <div class="molecules" aria-hidden="true">
+    <span>🧬</span><span>🔬</span><span>⚗️</span><span>🧪</span><span>🦠</span><span>🌱</span>
+  </div>
+
+  <header class="topbar">
+    <div class="logo" id="logoBtn">🧬 <b>BIOESTUDI</b><i>el joc de la memòria</i></div>
+    <div class="hud">
+      <div class="hud-pill" title="Nivell">🏅 <b id="hudLevel">1</b></div>
+      <div class="hud-pill xp" title="Experiència"><span id="hudXp">0</span>/400 XP</div>
+      <div class="hud-pill" title="Ratxa de dies">🔥 <b id="hudStreak">0</b></div>
+      <button class="hud-pill snd" id="sndBtn" title="So">🔊</button>
+    </div>
+  </header>
+
+  <main>
+    <!-- ============ INICI ============ -->
+    <section id="screen-home" class="screen">
+      <div class="hero">
+        <h1>Estudia <span class="grad">sense mirar</span>,<br>recorda <span class="grad">per sempre</span></h1>
+        <p class="tag">Nivells d'organització · sals minerals · vitamines · nutrients orgànics<br>
+        <b>FUNCIÓ → DEFICIÈNCIA → 2 FONTS</b> · <b>UNITATS → QUÈ FORMEN → FUNCIÓ</b></p>
+        <div class="due-banner" id="dueBanner">
+          <span id="dueText">Cap pendent encara. Fes una partida per començar!</span>
+          <button class="btn btn-small" id="dueBtn" hidden>🔁 Repassa ara</button>
+        </div>
+      </div>
+
+      <div class="modes">
+        <button class="mode-card m1" data-mode="session">
+          <span class="mode-ico">🎒</span>
+          <span class="mode-name">Sessió de 20 min</span>
+          <span class="mode-desc">Mapa → recuperació → explicació → test. Mix dels 4 blocs.</span>
+        </button>
+        <button class="mode-card m2" data-mode="arcade">
+          <span class="mode-ico">⚡</span>
+          <span class="mode-name">Missió ràpida</span>
+          <span class="mode-desc">3 vides, 15 s per pregunta i combos x2/x3.</span>
+        </button>
+        <button class="mode-card m3" data-mode="match">
+          <span class="mode-ico">🧪</span>
+          <span class="mode-name">Parells explosius</span>
+          <span class="mode-desc">Uneix concepte i resposta abans que acabi el temps.</span>
+        </button>
+        <button class="mode-card m4" data-mode="test">
+          <span class="mode-ico">📝</span>
+          <span class="mode-name">Mini test COMPROVA'T</span>
+          <span class="mode-desc">Les 10 preguntes oficials amb document tancat.</span>
+        </button>
+        <button class="mode-card m5" data-mode="review">
+          <span class="mode-ico">⭐</span>
+          <span class="mode-name">Repàs espaiat</span>
+          <span class="mode-desc">El que toca avui: mateix dia → 1 dia → 3 dies → 1 setmana.</span>
+        </button>
+        <button class="mode-card m6" data-mode="teach">
+          <span class="mode-ico">🎓</span>
+          <span class="mode-name">Explica-ho a algú</span>
+          <span class="mode-desc">Flashcards: digues-ho en veu alta i autoavalúa-te.</span>
+        </button>
+      </div>
+
+      <div class="blocks">
+        <h2>Els teus 4 blocs</h2>
+        <div class="block-grid" id="blockGrid"></div>
+      </div>
+    </section>
+
+    <!-- ============ JOC ============ -->
+    <section id="screen-game" class="screen" hidden>
+      <div class="game-hud">
+        <button class="btn btn-ghost" id="quitBtn">✕ Sortir</button>
+        <div class="g-mode" id="gMode">Sessió</div>
+        <div class="g-score">⭐ <b id="gScore">0</b></div>
+        <div class="g-combo" id="gCombo" hidden>🔥 x1</div>
+        <div class="g-hearts" id="gHearts"></div>
+      </div>
+      <div class="progress"><div class="progress-fill" id="gProgress"></div></div>
+      <div class="timer" id="gTimerWrap" hidden><div class="timer-fill" id="gTimer"></div></div>
+
+      <div class="qcard" id="qcard">
+        <div class="q-kind" id="qKind">Pregunta</div>
+        <div class="q-prompt" id="qPrompt"></div>
+        <div class="q-body" id="qBody"></div>
+        <div class="q-feedback" id="qFeedback" hidden></div>
+        <div class="q-actions" id="qActions"></div>
+      </div>
+      <div class="hint">Consell: 1–4 o Enter per continuar</div>
+    </section>
+
+    <!-- ============ RESULTAT ============ -->
+    <section id="screen-result" class="screen" hidden>
+      <div class="result-card">
+        <div class="result-emoji" id="rEmoji">🎉</div>
+        <h2 id="rTitle">Molt bé!</h2>
+        <div class="result-stats">
+          <div class="rstat"><b id="rScore">0</b><span>punts</span></div>
+          <div class="rstat"><b id="rAcc">0%</b><span>encerts</span></div>
+          <div class="rstat"><b id="rXp">+0</b><span>XP</span></div>
+        </div>
+        <div id="rStarsNote" class="stars-note" hidden></div>
+        <div class="result-list" id="rList"></div>
+        <div class="result-actions">
+          <button class="btn btn-primary" id="rRetry" hidden>🔁 Torna a provar-les</button>
+          <button class="btn btn-primary" id="rAgain">🔄 Una altra partida</button>
+          <button class="btn" id="rHome">🏠 Menú</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>BIOESTUDI · Guia d'estudi de Biologia · recorda → comprova → repeteix</footer>
+
+  <script src="data.js"></script>
+  <script src="game.js"></script>
+</body>
+</html>

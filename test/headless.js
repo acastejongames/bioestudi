@@ -25,6 +25,14 @@ window.eval(
 const G = window.G;
 if (!G) { console.error("FAIL: window.G no definit"); process.exit(1); }
 
+/* canvas real (stub) per exercitar confeti/fxLoop de veritat */
+const fxCanvas = window.document.getElementById("fx");
+const ctxStub = {
+  clearRect() {}, fillRect() {}, save() {}, restore() {}, translate() {}, rotate() {},
+  globalAlpha: 1, fillStyle: "",
+};
+fxCanvas.getContext = (kind) => (kind === "2d" ? ctxStub : null);
+
 let pass = 0, fail = 0;
 function check(cond, msg) {
   if (cond) { pass++; console.log("  ✓ " + msg); }
@@ -80,6 +88,16 @@ function checkNoRepeats(mode) {
   check(!window.document.getElementById("screen-home").hidden, "home visible en iniciar");
   check(window.document.querySelectorAll(".mode-card").length === 6, "6 modes a la portada");
   check(window.document.querySelectorAll("#secGrid .sec-card").length === 5, "5 seccions a la portada");
+
+  // confeti / efectes (detecta símbols no declarats com fxBroken)
+  console.log("\n== confeti / efectes ==");
+  try {
+    G.confetti(25);
+    await new Promise((r) => setTimeout(r, 150));
+    check(true, "confeti + fxLoop executen sense errors amb canvas real");
+  } catch (e) {
+    check(false, "confeti/fxLoop amb error: " + e.message);
+  }
 
   // sessió perfecta
   await runMode("session");
@@ -231,6 +249,17 @@ function checkNoRepeats(mode) {
   }
   check(G.done(), "sessió interactiva completada clicant a la UI");
   check(G.missed().length === 0, "sessió interactiva sense errors");
+
+  // ====== navegació des del resultat (rAgain / rHome) ======
+  console.log("\n== navegació result ==");
+  G.startMode("orgmix", null, null, "organitzacio");
+  check(spin(), "orgmix per provar navegació completada");
+  window.document.getElementById("rAgain").click();
+  check(G.inGame() && G.section() === "organitzacio", "🔄 rAgain repeteix la partida de la mateixa secció");
+  G.startMode("orgmix", null, null, "organitzacio");
+  check(spin(), "segona orgmix completada");
+  window.document.getElementById("rHome").click();
+  check(!window.document.getElementById("screen-home").hidden, "🏠 rHome torna a l'inici");
 
   // neteja errors de window
   check(errors.length === 0, "sense errors JS a window" + (errors.length ? ": " + errors.join(" | ") : ""));

@@ -58,4 +58,4 @@ Fonts de desplegament: branca `arena/062a1875-bioestudi` → arrel (`/`).
 node test/headless.js   # requereix jsdom (npm i jsdom)
 ```
 
-Recorre tots els modes i seccions, comprova puntuació, estrelles ⭐, repàs espaiat, taules de secció, filtratge de preguntes per secció, **absència de preguntes repetides dins de cada partida** i la interacció real amb la UI (**107 comprovacions**).
+Recorre tots els modes i seccions, comprova puntuació, estrelles ⭐, repàs espaiat, taules de secció, filtratge de preguntes per secció, **absència de preguntes repetides dins de cada partida** i la interacció real amb la UI (**112 comprovacions**).

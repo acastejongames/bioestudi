@@ -74,10 +74,11 @@ function sfx(kind) {
 }
 
 /* ============ confeti ============ */
-let parts = [], fxRaf = null;
+let parts = [], fxRaf = null, fxBroken = false;
 function confetti(n = 90) {
+  if (fxBroken) return;
   const c = $("fx"); if (!c || !c.getContext) return;
-  try { if (!c.getContext("2d")) return; } catch (e) { return; }
+  try { if (!c.getContext("2d")) { fxBroken = true; return; } } catch (e) { fxBroken = true; return; }
   for (let i = 0; i < n; i++) parts.push({
     x: Math.random() * c.width, y: -20 - Math.random() * c.height * 0.3,
     vx: (Math.random() - 0.5) * 3.4, vy: 2 + Math.random() * 4,
@@ -1181,6 +1182,7 @@ const G = {
     return false;
   },
   dueKeys, starKeys, S: () => S,
+  confetti: (n) => confetti(n),
 };
 function submitFieldsFills(q) {
   const rows = $("qBody").querySelectorAll(".field-row");

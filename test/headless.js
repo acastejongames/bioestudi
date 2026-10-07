@@ -547,6 +547,7 @@ function checkNoRepeats(mode) {
     await fakeUntil(() => K.G.onState().players.length === 3);
     const kickBtn = K.doc.querySelector(`[data-kick="${K.G.onState().players[1].id}"]`);
     check(!!kickBtn, "host ve el botó ✕ als jugadors a la lobby");
+    check(kickBtn.classList.contains("ban") && kickBtn.title.includes("banir"), "creu de la LOBBY = BAN (classe .ban + títol «no podrà tornar»)");
     kickBtn.click();
     await fakeUntil(() => K.G.onState().players.length === 2);
     check(true, "kick a la lobby: passen de 3 a 2 jugadors");
@@ -592,13 +593,18 @@ function checkNoRepeats(mode) {
     const checkerId = M.G.onState().turn.checkerId;
     const midKick = M.doc.querySelector(`[data-kick="${checkerId}"]`);
     check(!!midKick, "host pot expulsar en plena partida (xips de puntuació)");
+    check(!midKick.classList.contains("ban") && midKick.title.includes("sense ban"), "creu EN JOC = KICK (buida i títol «sense ban», diferent de la de lobby)");
     midKick.click();
     await fakeUntil(() => M.G.onState().players.length === 2 && M.G.onState().phase === "play");
     check(true, "kick en joc: la partida CONTINUA (no es reinicia)");
+    check(M.G.onState().banned === 0, "kick en joc NO baneja: el host manté 0 pids banejats");
     const restants = M.G.onState().players.map((p) => p.id);
     check(restants.includes(M.G.onState().turn.writerId) && restants.includes(M.G.onState().turn.checkerId), "rols reassignats als jugadors restants");
     await fakeUntil(() => Q1.G.onState().phase === "hub" && Q1.G.onState().msg.includes("expulsat"));
     check(true, "l'expulsat en joc rep l'avís");
+    Q1.G.onlineJoin(M.G.onState().code, "Quim");
+    await fakeUntil(() => Q1.G.onState().msg.includes("començat"));
+    check(!Q1.G.onState().msg.includes("no hi pots tornar"), "sense ban: reintentar-hi és «La partida ja ha començat», mai «no hi pots tornar»");
     M.doc.querySelector("#onView .on-w").value = "Cèl·lula";
     M.doc.getElementById("onPass").click();
     await fakeUntil(() => Q2.G.onState().view === "check");
@@ -612,8 +618,40 @@ function checkNoRepeats(mode) {
     check(M.G.onState().msg.includes("sol"), "kick de l'últim company → sala tancada amb avís (sense restart forçat)");
     M.G.leaveOnline(); Q1.G.leaveOnline(); Q2.G.leaveOnline();
 
+    // --- kick NO és ban: l'expulsat en joc POT TORNAR quan la sala torna a la lobby ---
+    const TW = makeClient("TW"), U1 = makeClient("U1"), U2 = makeClient("U2");
+    TW.G.onlineCreate("Torna", null, "minerals");
+    await fakeUntil(() => TW.G.onState().phase === "lobby");
+    const rowInp = TW.doc.getElementById("onRowSel");
+    rowInp.value = "1"; // partida d'UNA sola fila → arriba ràpidament a la lobby un altre cop
+    rowInp.dispatchEvent(new TW.win.Event("input")); // persisteix a l'estat (com el navegador)
+    U1.G.onlineJoin(TW.G.onState().code, "Uld");
+    await fakeUntil(() => TW.G.onState().players.length === 2);
+    U2.G.onlineJoin(TW.G.onState().code, "Uri");
+    await fakeUntil(() => TW.G.onState().players.length === 3);
+    TW.G.onlineStart("minerals");
+    await fakeUntil(() => TW.G.onState().view === "write");
+    const u2id = TW.G.onState().players[2].id;
+    TW.doc.querySelector(`[data-kick="${u2id}"]`).click();
+    await fakeUntil(() => TW.G.onState().players.length === 2 && TW.G.onState().banned === 0);
+    check(true, "kick en joc d'un company: la partida continua i NO queda banejat");
+    TW.doc.querySelector("#onView .on-w").value = "Cèl·lula";
+    TW.doc.getElementById("onPass").click();
+    await fakeUntil(() => U1.G.onState().view === "check");
+    U1.G.onVerdict(true);
+    await fakeUntil(() => TW.G.onState().view === "reveal");
+    TW.doc.getElementById("onNext").click(); // fila única → fi de partida
+    await fakeUntil(() => TW.G.onState().phase === "over");
+    TW.doc.getElementById("onAgain").click(); // el host torna a la lobby
+    await fakeUntil(() => TW.G.onState().phase === "lobby");
+    U2.G.onlineJoin(TW.G.onState().code, "Uri");
+    await fakeUntil(() => U2.G.onState().phase === "lobby");
+    check(TW.G.onState().players.length === 3, "KICK ≠ BAN: l'expulsat en joc TORNA a unir-se un cop la sala és a la lobby");
+    TW.G.leaveOnline(); U1.G.leaveOnline(); U2.G.leaveOnline();
+
     const onlineErrs = [...A.errs, ...B.errs, ...C.errs, ...D.errs, ...E.errs, ...F.errs, ...H.errs,
-      ...K.errs, ...P1.errs, ...P2.errs, ...R2.errs, ...S2.errs, ...M.errs, ...Q1.errs, ...Q2.errs];
+      ...K.errs, ...P1.errs, ...P2.errs, ...R2.errs, ...S2.errs, ...M.errs, ...Q1.errs, ...Q2.errs,
+      ...TW.errs, ...U1.errs, ...U2.errs];
     check(onlineErrs.length === 0, "sense errors JS als clients online" + (onlineErrs.length ? ": " + onlineErrs.join(" | ") : ""));
   } catch (e) {
     const diag = {};

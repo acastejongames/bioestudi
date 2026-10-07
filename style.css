@@ -922,3 +922,7 @@ table.on-table {
 }
 .on-x:hover { background: rgba(236, 128, 128, 0.18); border-color: var(--bad); }
 .on-x:focus-visible { outline: 2px solid var(--bad); outline-offset: 1px; }
+
+/* la creu de la lobby = BAN (fona i vermella); la de joc = KICK (buida) */
+.on-x.ban { background: rgba(236, 128, 128, 0.18); border-color: var(--bad); }
+.on-x.ban:hover { background: rgba(236, 128, 128, 0.36); }

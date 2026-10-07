@@ -1478,10 +1478,16 @@ function hostVerdict(good) {
 function hostKick(id, why) {
   if (!ON.host || !id || id === ON.me) return;
   if (!ON.players.some((p) => p.id === id)) return;
-  /* ban estable per pid: no podrà tornar a unir-se a aquesta sala */
+  /* DISTINGUEIX kick i ban: a la lobby la creu = BAN (el pid queda bloquejat i
+     no hi pot tornar mai més); en joc = KICK senzill (NO es bloqueja: si la
+     sala torna a la lobby, encara que proving del rebuig "partida en marxa"). */
+  const ban = ON.phase === "lobby";
   const pid = ON.pids[id];
-  if (pid) ON.banned.add(pid);
-  try { onSend(id, { t: "kicked", why: why || "El host t'ha expulsat de la sala." }); } catch (e) {}
+  if (ban && pid) ON.banned.add(pid);
+  const defWhy = ban
+    ? "T'han expulsat d'aquesta sala i no hi pots tornar."
+    : "El host t'ha expulsat de la partida (no estàs bloquejat).";
+  try { onSend(id, { t: "kicked", why: why || defWhy }); } catch (e) {}
   const c = ON.conns[id];
   delete ON.conns[id];
   delete ON.pids[id];
@@ -1669,7 +1675,7 @@ function renderOnLobby(v) {
     <div class="on-head">🎟️ Sala <b class="on-code">${esc(ON.code)}</b>
       <button class="btn btn-small" id="onCopy">Copia</button></div>
     <div class="on-players">
-      ${ON.players.map((p) => `<span class="on-chip${p.id === ON.me ? " me" : ""}">${p.id === ON.players[0].id ? "👑 " : ""}${esc(p.name)}${p.id === ON.me ? " (tu)" : ""}${ON.host && p.id !== ON.me ? `<button class="on-x" data-kick="${p.id}" title="Expulsar (ban d'aquesta sala)">✕</button>` : ""}</span>`).join("")}
+      ${ON.players.map((p) => `<span class="on-chip${p.id === ON.me ? " me" : ""}">${p.id === ON.players[0].id ? "👑 " : ""}${esc(p.name)}${p.id === ON.me ? " (tu)" : ""}${ON.host && p.id !== ON.me ? `<button class="on-x ban" data-kick="${p.id}" title="🚫 Expulsar i banir: no podrà tornar a la sala">✕</button>` : ""}</span>`).join("")}
       ${Array.from({ length: ONLINE_MAX - ON.players.length }, () => `<span class="on-chip empty">+ lliure</span>`).join("")}
     </div>
     ${isHost ? `
@@ -1718,7 +1724,7 @@ function renderOnLobby(v) {
 }
 function scoresBar() {
   return `<div class="on-scores">${ON.players.map((p) =>
-    `<span class="on-chip score${p.id === ON.me ? " me" : ""}">${esc(p.name)} <b>${ON.scores[p.id] || 0}</b>${ON.host && p.id !== ON.me ? `<button class="on-x" data-kick="${p.id}" title="Expulsar (ban d'aquesta sala)">✕</button>` : ""}</span>`).join("")}</div>`;
+    `<span class="on-chip score${p.id === ON.me ? " me" : ""}">${esc(p.name)} <b>${ON.scores[p.id] || 0}</b>${ON.host && p.id !== ON.me ? `<button class="on-x" data-kick="${p.id}" title="👋 Expulsar de la partida (sense ban; hi podrà tornar després)">✕</button>` : ""}</span>`).join("")}</div>`;
 }
 /* La taula de la partida: només files JA completades (+ l'actual si toca escriure-hi) */
 function onTableHTML(m, editing) {

@@ -923,6 +923,23 @@ table.on-table {
 .on-x:hover { background: rgba(236, 128, 128, 0.18); border-color: var(--bad); }
 .on-x:focus-visible { outline: 2px solid var(--bad); outline-offset: 1px; }
 
-/* la creu de la lobby = BAN (fona i vermella); la de joc = KICK (buida) */
-.on-x.ban { background: rgba(236, 128, 128, 0.18); border-color: var(--bad); }
-.on-x.ban:hover { background: rgba(236, 128, 128, 0.36); }
+/* menú de TRIA en clicar la creu: kick o ban */
+.kick-pop { position: fixed; inset: 0; z-index: 200; display: grid; place-items: center; }
+.kick-back { position: absolute; inset: 0; background: rgba(6, 9, 8, 0.66); }
+.kick-card {
+  position: relative; width: min(330px, calc(100vw - 28px));
+  background: rgba(18, 23, 21, 0.98); border: 1px solid var(--card-brd);
+  border-radius: 16px; padding: 16px; display: grid; gap: 9px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.55);
+}
+.kick-t { margin: 0 0 3px; font-weight: 800; }
+.kick-t b { color: var(--acc); }
+.kick-card .btn { display: grid; gap: 3px; text-align: left; border-radius: 12px; }
+.kick-card .btn small { font-weight: 500; font-size: 11.5px; opacity: 0.75; }
+.kick-card [data-kick-act="kick"] { border-color: rgba(242, 240, 232, 0.25); color: var(--txt); }
+.kick-card [data-kick-act="ban"] {
+  border-color: rgba(236, 128, 128, 0.55); color: var(--bad);
+  background: rgba(236, 128, 128, 0.1);
+}
+.kick-card [data-kick-act="ban"]:hover { background: rgba(236, 128, 128, 0.2); border-color: var(--bad); }
+.kick-card [data-kick-act="cancel"] { text-align: center; }

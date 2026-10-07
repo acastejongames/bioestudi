@@ -1475,19 +1475,44 @@ function hostVerdict(good) {
   });
   openOnlineScreen();
 }
-function hostKick(id, why) {
+/* menú de TRIA en clicar la creu: l'host decideix entre kick (hi pot tornar)
+   o ban (no hi torna mai més), tant a la lobby com en plena partida */
+function openKickMenu(id) {
+  if (!ON.host) return;
+  const p = playerById(id);
+  if (!p) return;
+  document.querySelectorAll(".kick-pop").forEach((el) => el.remove());
+  const pop = document.createElement("div");
+  pop.className = "kick-pop";
+  pop.innerHTML = `
+    <div class="kick-back" data-kick-act="cancel" title="Cancel·la"></div>
+    <div class="kick-card" role="dialog" aria-label="Expulsar jugador">
+      <p class="kick-t">Què vols fer amb <b>${esc(p.name)}</b>?</p>
+      <button class="btn" data-kick-act="kick">👋 Expulsar (kick)<small>Surt de la sala o la partida, però hi pot tornar a entrar</small></button>
+      <button class="btn" data-kick-act="ban">🚫 Expulsar i banir (ban)<small>El navegador queda bloquejat: no podrà tornar mai més aquesta sala</small></button>
+      <button class="btn btn-ghost" data-kick-act="cancel">Cancel·la</button>
+    </div>`;
+  document.body.appendChild(pop);
+  pop.querySelectorAll("[data-kick-act]").forEach((b) => {
+    b.onclick = () => {
+      const act = b.dataset.kickAct;
+      pop.remove();
+      if (act === "kick") hostKick(id, false);
+      else if (act === "ban") hostKick(id, true);
+    };
+  });
+}
+function hostKick(id, ban) {
   if (!ON.host || !id || id === ON.me) return;
   if (!ON.players.some((p) => p.id === id)) return;
-  /* DISTINGUEIX kick i ban: a la lobby la creu = BAN (el pid queda bloquejat i
-     no hi pot tornar mai més); en joc = KICK senzill (NO es bloqueja: si la
-     sala torna a la lobby, encara que proving del rebuig "partida en marxa"). */
-  const ban = ON.phase === "lobby";
+  /* el host TRIA kick o ban al menú: ban → el pid queda bloquejat i no hi
+     pot tornar; kick → només l'expulsió (hi pot tornar si la sala el deixa) */
   const pid = ON.pids[id];
   if (ban && pid) ON.banned.add(pid);
-  const defWhy = ban
+  const why = ban
     ? "T'han expulsat d'aquesta sala i no hi pots tornar."
-    : "El host t'ha expulsat de la partida (no estàs bloquejat).";
-  try { onSend(id, { t: "kicked", why: why || defWhy }); } catch (e) {}
+    : "El host t'ha expulsat (no estàs bloquejat; no és un ban).";
+  try { onSend(id, { t: "kicked", why }); } catch (e) {}
   const c = ON.conns[id];
   delete ON.conns[id];
   delete ON.pids[id];
@@ -1675,7 +1700,7 @@ function renderOnLobby(v) {
     <div class="on-head">🎟️ Sala <b class="on-code">${esc(ON.code)}</b>
       <button class="btn btn-small" id="onCopy">Copia</button></div>
     <div class="on-players">
-      ${ON.players.map((p) => `<span class="on-chip${p.id === ON.me ? " me" : ""}">${p.id === ON.players[0].id ? "👑 " : ""}${esc(p.name)}${p.id === ON.me ? " (tu)" : ""}${ON.host && p.id !== ON.me ? `<button class="on-x ban" data-kick="${p.id}" title="🚫 Expulsar i banir: no podrà tornar a la sala">✕</button>` : ""}</span>`).join("")}
+      ${ON.players.map((p) => `<span class="on-chip${p.id === ON.me ? " me" : ""}">${p.id === ON.players[0].id ? "👑 " : ""}${esc(p.name)}${p.id === ON.me ? " (tu)" : ""}${ON.host && p.id !== ON.me ? `<button class="on-x" data-kick="${p.id}" title="Expulsar: tria kick o ban">✕</button>` : ""}</span>`).join("")}
       ${Array.from({ length: ONLINE_MAX - ON.players.length }, () => `<span class="on-chip empty">+ lliure</span>`).join("")}
     </div>
     ${isHost ? `
@@ -1716,7 +1741,7 @@ function renderOnLobby(v) {
     ord.value = ON.order;
     ord.onchange = () => { ON.order = ord.value; };
   }
-  v.querySelectorAll("[data-kick]").forEach((b) => { b.onclick = () => hostKick(b.dataset.kick); });
+  v.querySelectorAll("[data-kick]").forEach((b) => { b.onclick = () => openKickMenu(b.dataset.kick); });
   const st = $("onStart");
   if (st) st.onclick = () => onlineStart($("onSection").value);
   const lv = $("onLeave");
@@ -1724,7 +1749,7 @@ function renderOnLobby(v) {
 }
 function scoresBar() {
   return `<div class="on-scores">${ON.players.map((p) =>
-    `<span class="on-chip score${p.id === ON.me ? " me" : ""}">${esc(p.name)} <b>${ON.scores[p.id] || 0}</b>${ON.host && p.id !== ON.me ? `<button class="on-x" data-kick="${p.id}" title="👋 Expulsar de la partida (sense ban; hi podrà tornar després)">✕</button>` : ""}</span>`).join("")}</div>`;
+    `<span class="on-chip score${p.id === ON.me ? " me" : ""}">${esc(p.name)} <b>${ON.scores[p.id] || 0}</b>${ON.host && p.id !== ON.me ? `<button class="on-x" data-kick="${p.id}" title="Expulsar: tria kick o ban">✕</button>` : ""}</span>`).join("")}</div>`;
 }
 /* La taula de la partida: només files JA completades (+ l'actual si toca escriure-hi) */
 function onTableHTML(m, editing) {
@@ -1818,7 +1843,7 @@ function renderOnPlay(v) {
   if (m.you === "write") {
     [...v.querySelectorAll(".on-w")].forEach((inp, i) => { inp.value = prevVals[i] || ""; });
   }
-  v.querySelectorAll("[data-kick]").forEach((b) => { b.onclick = () => hostKick(b.dataset.kick); });
+  v.querySelectorAll("[data-kick]").forEach((b) => { b.onclick = () => openKickMenu(b.dataset.kick); });
   const pass = $("onPass");
   if (pass) pass.onclick = () => {
     const vals = [...v.querySelectorAll(".on-w")].map((inp) => inp.value);

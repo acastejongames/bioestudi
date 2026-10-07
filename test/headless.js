@@ -547,16 +547,25 @@ function checkNoRepeats(mode) {
     await fakeUntil(() => K.G.onState().players.length === 3);
     const kickBtn = K.doc.querySelector(`[data-kick="${K.G.onState().players[1].id}"]`);
     check(!!kickBtn, "host ve el botó ✕ als jugadors a la lobby");
-    check(kickBtn.classList.contains("ban") && kickBtn.title.includes("banir"), "creu de la LOBBY = BAN (classe .ban + títol «no podrà tornar»)");
     kickBtn.click();
+    let kpop = K.doc.querySelector(".kick-pop");
+    check(!!kpop && kpop.querySelector('[data-kick-act="kick"]') && kpop.querySelector('[data-kick-act="ban"]'), "en clicar la creu s'obre el menú per TRIAR kick o ban");
+    kpop.querySelector('[data-kick-act="ban"]').click();
     await fakeUntil(() => K.G.onState().players.length === 2);
-    check(true, "kick a la lobby: passen de 3 a 2 jugadors");
+    check(true, "BAN triat a la lobby: passen de 3 a 2 jugadors");
     await fakeUntil(() => P1.G.onState().phase === "hub" && P1.G.onState().msg.includes("expulsat"));
-    check(true, "el jugador expulsat rep l'avís i torna a l'inici");
+    check(true, "el jugador banejat rep l'avís i torna a l'inici");
     P1.G.onlineJoin(K.G.onState().code, "Pep");
     await fakeUntil(() => P1.G.onState().phase === "hub" && P1.G.onState().msg.includes("expulsat"));
-    check(P1.G.onState().banned === 0 && K.G.onState().players.length === 2, "BAN: el jugador expulsat no pot tornar a unir-se a la mateixa sala");
-    check(K.G.onState().banned === 1, "el host manté 1 pid banejat");
+    check(K.G.onState().banned === 1 && K.G.onState().players.length === 2, "BAN: el banejat no pot tornar a unir-se a la mateixa sala");
+    const kickBtn2 = K.doc.querySelector(`[data-kick="${K.G.onState().players[1].id}"]`);
+    kickBtn2.click();
+    K.doc.querySelector('.kick-pop [data-kick-act="kick"]').click();
+    await fakeUntil(() => K.G.onState().players.length === 1);
+    await fakeUntil(() => P2.G.onState().phase === "hub" && P2.G.onState().msg.includes("expulsat"));
+    P2.G.onlineJoin(K.G.onState().code, "Pau");
+    await fakeUntil(() => P2.G.onState().phase === "lobby");
+    check(K.G.onState().players.length === 2 && K.G.onState().banned === 1, "KICK triat a la lobby: el company SÍ pot tornar (fora, només el banejat)");
     K.G.leaveOnline(); P1.G.leaveOnline(); P2.G.leaveOnline();
 
     // --- ordre aleatori aplicat a les files ---
@@ -593,11 +602,13 @@ function checkNoRepeats(mode) {
     const checkerId = M.G.onState().turn.checkerId;
     const midKick = M.doc.querySelector(`[data-kick="${checkerId}"]`);
     check(!!midKick, "host pot expulsar en plena partida (xips de puntuació)");
-    check(!midKick.classList.contains("ban") && midKick.title.includes("sense ban"), "creu EN JOC = KICK (buida i títol «sense ban», diferent de la de lobby)");
     midKick.click();
+    const mpop = M.doc.querySelector('.kick-pop [data-kick-act="kick"]');
+    check(!!mpop, "en joc la creu també obre el TRIADOR kick/ban");
+    mpop.click();
     await fakeUntil(() => M.G.onState().players.length === 2 && M.G.onState().phase === "play");
-    check(true, "kick en joc: la partida CONTINUA (no es reinicia)");
-    check(M.G.onState().banned === 0, "kick en joc NO baneja: el host manté 0 pids banejats");
+    check(true, "KICK triat en joc: la partida CONTINUA (no es reinicia)");
+    check(M.G.onState().banned === 0, "kick triat NO baneja: el host manté 0 pids banejats");
     const restants = M.G.onState().players.map((p) => p.id);
     check(restants.includes(M.G.onState().turn.writerId) && restants.includes(M.G.onState().turn.checkerId), "rols reassignats als jugadors restants");
     await fakeUntil(() => Q1.G.onState().phase === "hub" && Q1.G.onState().msg.includes("expulsat"));
@@ -614,8 +625,9 @@ function checkNoRepeats(mode) {
     check(true, "fila completada amb els jugadors restants");
     const otherId = M.G.onState().players.find((p) => p.id !== M.G.onState().me).id;
     M.doc.querySelector(`[data-kick="${otherId}"]`).click();
+    M.doc.querySelector('.kick-pop [data-kick-act="ban"]').click();
     await fakeUntil(() => M.G.onState().phase === "hub");
-    check(M.G.onState().msg.includes("sol"), "kick de l'últim company → sala tancada amb avís (sense restart forçat)");
+    check(M.G.onState().msg.includes("sol") && M.G.onState().banned === 1, "BAN triat en joc de l'últim company → sala tancada amb avís + pid banejat");
     M.G.leaveOnline(); Q1.G.leaveOnline(); Q2.G.leaveOnline();
 
     // --- kick NO és ban: l'expulsat en joc POT TORNAR quan la sala torna a la lobby ---
@@ -633,6 +645,7 @@ function checkNoRepeats(mode) {
     await fakeUntil(() => TW.G.onState().view === "write");
     const u2id = TW.G.onState().players[2].id;
     TW.doc.querySelector(`[data-kick="${u2id}"]`).click();
+    TW.doc.querySelector('.kick-pop [data-kick-act="kick"]').click();
     await fakeUntil(() => TW.G.onState().players.length === 2 && TW.G.onState().banned === 0);
     check(true, "kick en joc d'un company: la partida continua i NO queda banejat");
     TW.doc.querySelector("#onView .on-w").value = "Cèl·lula";

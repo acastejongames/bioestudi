@@ -79,6 +79,11 @@
           <span class="mode-name">Explica-ho a algú</span>
           <span class="mode-desc">Flashcards: digues-ho en veu alta i autoavalúa-te.</span>
         </button>
+        <button class="mode-card m7" data-mode="online">
+          <span class="mode-ico">🌐</span>
+          <span class="mode-name">Online · sala amb codi</span>
+          <span class="mode-desc">Fins a 4 jugadors en línia amb codi de sala: un escriu la taula, un altre revisa amb chuleta i es revela el text real.</span>
+        </button>
       </div>
 
       <div class="danger-zone">
@@ -89,6 +94,11 @@
     <!-- ============ SECCIÓ ============ -->
     <section id="screen-section" class="screen" hidden>
       <div id="secView"></div>
+    </section>
+
+    <!-- ============ ONLINE ============ -->
+    <section id="screen-online" class="screen" hidden>
+      <div id="onView"></div>
     </section>
 
     <!-- ============ JOC ============ -->
@@ -139,6 +149,7 @@
   <footer>BIOESTUDI · Guia d'estudi de Biologia · recorda → comprova → repeteix</footer>
 
   <script src="data.js"></script>
+  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
   <script src="game.js"></script>
 </body>
 </html>

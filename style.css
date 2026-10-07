@@ -485,3 +485,165 @@ table.sheet.cover td.ans.rev .v { filter: none; opacity: 1; }
   .hero h1 { font-size: clamp(22px, 5vw, 30px); }
   .hint { display: none; }
 }
+
+/* ============ 🌐 ONLINE — sala amb codi, fins a 4 ============ */
+.on-head {
+  margin: 8px 0 4px;
+  font-size: clamp(20px, 4.6vw, 30px);
+  font-weight: 900;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.on-head.small { font-size: clamp(15px, 3.4vw, 18px); margin-bottom: 2px; }
+.on-max {
+  font-size: 12.5px;
+  font-weight: 700;
+  opacity: 0.78;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid var(--card-brd);
+  padding: 5px 11px;
+  border-radius: 999px;
+}
+.on-code {
+  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  font-size: clamp(30px, 8vw, 46px);
+  letter-spacing: 6px;
+  background: var(--grad);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 0 16px rgba(0, 212, 255, 0.35));
+}
+.on-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 14px; }
+.on-card {
+  background: var(--card);
+  border: 1px solid var(--card-brd);
+  border-radius: var(--radius);
+  padding: 18px;
+}
+.on-card h3 { margin: 0 0 12px; font-size: 17px; }
+.on-msg { color: var(--bad); font-weight: 700; margin: 14px 4px; }
+.on-note { font-size: 13px; opacity: 0.75; margin: 10px 4px; line-height: 1.5; }
+.on-note.warn { color: var(--gold); opacity: 1; font-weight: 800; }
+.on-players { display: flex; gap: 10px; flex-wrap: wrap; margin: 16px 0; }
+.on-chip {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--card-brd);
+  padding: 8px 14px;
+  border-radius: 999px;
+  font-weight: 700;
+  font-size: 14px;
+}
+.on-chip.me { border-color: var(--c2); box-shadow: 0 0 0 1px var(--c2) inset; }
+.on-chip.empty { opacity: 0.4; border-style: dashed; }
+.on-chip.score b { color: var(--c2); font-size: 16px; }
+.on-scores { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0; }
+.on-turn { font-size: 13.5px; opacity: 0.8; margin: 6px 2px 12px; }
+.on-foot { display: flex; gap: 10px; justify-content: center; margin: 16px 0; flex-wrap: wrap; }
+
+.wait-card {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px dashed var(--card-brd);
+  border-radius: 20px;
+  padding: 26px 18px;
+  text-align: center;
+  margin: 16px 0;
+  font-weight: 700;
+  line-height: 1.5;
+}
+.wait-card.big { padding: 34px 18px; }
+.wait-ico { font-size: 46px; margin-bottom: 10px; animation: pulseOn 1.6s ease-in-out infinite; display: inline-block; }
+@keyframes pulseOn { 0%, 100% { transform: scale(1); opacity: 0.85; } 50% { transform: scale(1.13); opacity: 1; } }
+.wait-dots { margin-top: 12px; }
+.wait-dots span { display: inline-block; margin: 0 4px; color: var(--c2); animation: blinkOn 1.2s infinite; }
+.wait-dots span:nth-child(2) { animation-delay: 0.2s; }
+.wait-dots span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes blinkOn { 0%, 100% { opacity: 0.2; } 50% { opacity: 1; } }
+
+.on-play .q-body { display: flex; flex-direction: column; gap: 12px; }
+.on-play .q-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+
+.chuleta {
+  background: linear-gradient(135deg, #ffe89b, #ffd166);
+  color: #463600;
+  border-radius: 14px;
+  padding: 14px 16px;
+  box-shadow: 0 10px 26px rgba(255, 209, 102, 0.28);
+  transform: rotate(-0.4deg);
+  font-size: 15.5px;
+  line-height: 1.5;
+}
+.ch-row { margin-top: 8px; display: flex; gap: 8px; flex-wrap: wrap; align-items: baseline; }
+.ch-lbl {
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+  opacity: 0.72;
+  background: rgba(70, 54, 0, 0.12);
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+.duo-cmp {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--card-brd);
+  border-radius: 14px;
+  padding: 12px 14px;
+}
+.cmp-line .lbl {
+  font-size: 11.5px;
+  font-weight: 800;
+  text-transform: uppercase;
+  opacity: 0.66;
+  display: block;
+  margin-bottom: 4px;
+}
+.cmp-line .typed { color: var(--gold); font-weight: 700; }
+.cmp-line.real {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--card-brd);
+  font-weight: 800;
+  color: var(--ok);
+}
+.on-badge {
+  display: inline-block;
+  margin-top: 8px;
+  font-size: 12.5px;
+  font-weight: 800;
+  background: rgba(0, 212, 255, 0.12);
+  border: 1px solid rgba(0, 212, 255, 0.4);
+  padding: 4px 10px;
+  border-radius: 999px;
+}
+.on-deltas {
+  font-size: 14.5px;
+  background: rgba(61, 220, 151, 0.1);
+  border: 1px solid rgba(61, 220, 151, 0.35);
+  border-radius: 12px;
+  padding: 10px 14px;
+  line-height: 1.5;
+}
+.ok-t { color: var(--ok); }
+.bad-t { color: var(--bad); }
+
+.podium { max-width: 480px; margin: 14px auto; display: flex; flex-direction: column; gap: 8px; }
+.pod-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  background: var(--card);
+  border: 1px solid var(--card-brd);
+  border-radius: 14px;
+  padding: 11px 16px;
+  font-weight: 800;
+}
+.pod-row.me { border-color: var(--c2); box-shadow: 0 0 0 1px var(--c2) inset; }
+.pod-row .p-name { flex: 1; }
+
+@media (max-width: 700px) {
+  .on-grid { grid-template-columns: 1fr; }
+  .on-head { flex-direction: column; align-items: flex-start; gap: 6px; }
+  .on-code { letter-spacing: 4px; }
+}

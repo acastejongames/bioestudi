@@ -966,7 +966,7 @@ function finish() {
 
 /* ============ navegació / home ============ */
 function show(which) {
-  ["home", "game", "result", "section"].forEach((s) => { $("screen-" + s).hidden = s !== which; });
+  ["home", "game", "result", "section", "online"].forEach((s) => { $("screen-" + s).hidden = s !== which; });
   document.body.dataset.screen = which;
   if (which !== "game") clearTimers();
   window.scrollTo({ top: 0, behavior: "smooth" });
@@ -1108,6 +1108,557 @@ function goBackAfterGame() {
   } else goHome();
 }
 
+/* ============ ONLINE — sala amb codi, fins a 4 jugadors ============ */
+const ONLINE_MAX = 4;
+const CODE_ALPHA = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+const ON = {
+  phase: "hub", code: "", host: false, me: "", name: "",
+  players: [], section: "mix", scores: {},
+  peer: null, conns: {}, conn: null,
+  rows: [], rowIdx: -1, turn: null,
+  local: null, view: "wait", msg: "", xpDone: false,
+};
+
+/* --- codi de sala ÚNIC (mai repetit entre sales recents + proving que la sala no existeixi) --- */
+function genCode() {
+  const a = CODE_ALPHA;
+  const recent = (S && S.recentCodes) || [];
+  let last = "";
+  for (let tries = 0; tries < 40; tries++) {
+    const arr = new Uint32Array(6);
+    if (window.crypto && crypto.getRandomValues) crypto.getRandomValues(arr);
+    else for (let i = 0; i < 6; i++) arr[i] = Math.floor(Math.random() * 1e9);
+    let out = "";
+    for (let i = 0; i < 6; i++) out += a[arr[i] % a.length];
+    last = out;
+    if (recent.indexOf(out) === -1) return out;
+  }
+  return last;
+}
+function rememberCode(code) {
+  S.recentCodes = (S.recentCodes || []).concat([code]).slice(-80);
+  save();
+}
+function makePeer(id) {
+  if (window.__peerFactory) return window.__peerFactory(id);
+  if (typeof Peer === "undefined") return null;
+  try { return id ? new Peer(id) : new Peer(); } catch (e) { return null; }
+}
+
+/* --- xifratge/estimació: % de cobertura respecte del text real --- */
+const STOPKW = new Set(["funcio", "clau", "fonts", "font", "dues", "codi", "real", "text", "resposta", "correcte", "mateix", "altra", "altres", "sobre", "entre"]);
+function kwOf(real) {
+  const toks = norm(real || "").split(" ").filter((t) => t.length >= 4 && !STOPKW.has(t));
+  const uniq = [...new Set(toks)];
+  uniq.sort((x, y) => y.length - x.length);
+  return uniq.slice(0, 5);
+}
+function kwStem(k) { return k.length > 4 && k.endsWith("s") ? k.slice(0, -1) : k; }
+function covMeta(row, typed) {
+  const cols = [];
+  let got = 0, tot = 0;
+  row.cols.forEach((c, i) => {
+    const kws = kwOf(c.real);
+    const t = norm((typed || [])[i] || "");
+    let m = 0;
+    for (const k of kws) if (t.includes(kwStem(k))) m++;
+    const cov = kws.length ? m / kws.length : (t ? 1 : 0);
+    cols.push(cov);
+    got += m; tot += kws.length;
+  });
+  const overall = tot ? got / tot : ((typed || []).some((v) => norm(v)) ? 1 : 0);
+  return { cols, overall };
+}
+function covBadge(c) { return c >= 0.67 ? "✅" : c >= 0.34 ? "🔸" : "❌"; }
+
+/* --- files de la taula per secció (el que s'ha d'escriure) --- */
+function rowsForSection(sec) {
+  if (sec === "organitzacio") {
+    const sh = sectionSheet("organitzacio");
+    return sh.rows.map((r, i) => ({
+      tipus: "row", block: "organitzacio",
+      items: [i === 3 ? "org:emergent" : "org:nivells"], id: "row:org:" + i,
+      row: { title: r[0], cols: [{ label: i === 3 ? "Definició" : "Seqüència de nivells", real: r[1] }] },
+    }));
+  }
+  if (["minerals", "hidro", "lipo", "nutrients"].indexOf(sec) >= 0) {
+    const sh = sectionSheet(sec);
+    const keys = sectionItemKeys(sec);
+    return sh.rows.map((r, i) => ({
+      tipus: "row",
+      block: sec === "nutrients" ? "nutrients" : sec === "minerals" ? "minerals" : "vitamines",
+      items: [keys[i]], id: "row:" + keys[i],
+      row: { title: r[0], cols: sh.cols.slice(1).map((label, ci) => ({ label, real: r[ci + 1] })) },
+    }));
+  }
+  return [];
+}
+function buildOnlineRows(section) {
+  if (section && section !== "mix") return rowsForSection(section);
+  const pickN = (sec, n) => shuffle(rowsForSection(sec)).slice(0, n);
+  return [
+    ...pickN("minerals", 2), ...pickN("hidro", 2), ...pickN("lipo", 1),
+    ...pickN("nutrients", 2), ...pickN("organitzacio", 1),
+  ];
+}
+
+/* ---------- estat compartit ---------- */
+function destroyOnline() {
+  try { if (ON.conn) ON.conn.close(); } catch (e) {}
+  try { Object.keys(ON.conns).forEach((k) => { try { ON.conns[k].close(); } catch (e) {} }); } catch (e) {}
+  try { if (ON.peer) ON.peer.destroy(); } catch (e) {}
+  ON.peer = null; ON.conn = null; ON.conns = {};
+  if (ON.guard) { clearTimeout(ON.guard); ON.guard = null; }
+}
+function leaveOnline() {
+  ON.phase = "hub";
+  destroyOnline();
+  ON.code = ""; ON.msg = ""; ON.players = []; ON.scores = {};
+  ON.local = null; ON.view = "wait"; ON.turn = null; ON.xpDone = false;
+  show("home"); renderHome();
+}
+function openOnline() {
+  show("online"); renderOnline();
+}
+function openOnlineScreen() {
+  if ($("screen-online").hidden) show("online");
+  renderOnline();
+}
+function playerById(id) { return ON.players.find((p) => p.id === id); }
+function pname(id) { const p = playerById(id); return p ? p.name : "?"; }
+function grantOnlineXp() {
+  if (ON.xpDone) return;
+  ON.xpDone = true;
+  const mine = ON.scores[ON.me] || 0;
+  S.xp += Math.round(mine / 10);
+  touchDay(); save(); renderHud();
+}
+
+/* ---------- HOST ---------- */
+function onlineCreate(name, forceCode) {
+  destroyOnline();
+  ON.host = true; ON.name = (name || "").trim().slice(0, 16) || "Jugador 1";
+  ON.phase = "hub"; ON.msg = "Connectant…"; ON.xpDone = false;
+  openOnlineScreen();
+  tryCreate(0, forceCode);
+}
+function tryCreate(attempt, forceCode) {
+  const code = attempt === 0 && forceCode ? forceCode : genCode();
+  const peer = makePeer("bioestudi-" + code);
+  if (!peer) { ON.msg = "⚠️ No s'ha pogut carregar PeerJS (cal connexió a internet)."; openOnlineScreen(); return; }
+  ON.peer = peer;
+  peer.on("open", () => {
+    ON.code = code; ON.me = peer.id || ("bioestudi-" + code);
+    ON.players = [{ id: ON.me, name: ON.name }];
+    ON.scores = {}; ON.phase = "lobby"; ON.msg = "";
+    rememberCode(code);
+    openOnlineScreen();
+  });
+  peer.on("connection", (conn) => hostOnConn(conn));
+  peer.on("error", (e) => {
+    const t = e && e.type;
+    if (t === "unavailable-id") {
+      try { peer.destroy(); } catch (err) {}
+      if (attempt < 8) { tryCreate(attempt + 1); return; }
+      ON.msg = "⚠️ No s'ha pogut generar un codi lliure. Torna-ho a provar.";
+      openOnlineScreen(); return;
+    }
+    if (ON.phase !== "over") { ON.msg = "⚠️ Error de connexió: " + (t || "desconegut"); openOnlineScreen(); }
+  });
+}
+function hostOnConn(conn) {
+  const remote = conn.peer;
+  conn.on("data", (m) => hostHandle(m, conn, remote));
+  conn.on("close", () => hostDrop(remote));
+}
+function hostDrop(id) {
+  if (ON.phase === "lobby") {
+    if (!ON.players.some((p) => p.id === id)) return;
+    ON.players = ON.players.filter((p) => p.id !== id);
+    delete ON.scores[id];
+    hostLobby();
+  } else if (ON.phase === "play") {
+    /* només una desconnexió d'un jugador UNIT acaba la partida;
+       connexions rebutjades (sala plena/começada) tanquen la seva connexió sense afectar-hi */
+    if (!ON.players.some((p) => p.id === id)) return;
+    hostEnd("Un jugador s'ha desconnectat. La sala s'ha tancat.");
+  }
+}
+function hostEnd(why) {
+  const msg = { t: "bye", why };
+  ON.players.forEach((p) => { if (p.id !== ON.me) onSend(p.id, msg); });
+  ON.phase = "hub"; ON.msg = "⚠️ " + why; ON.players = []; ON.local = null; ON.turn = null;
+  destroyOnline();
+  openOnlineScreen();
+}
+function onSend(id, msg) {
+  const c = ON.conns[id];
+  if (c) { try { c.send(msg); } catch (e) {} }
+}
+function hostLobby() {
+  ON.players.forEach((p) => { if (ON.scores[p.id] == null) ON.scores[p.id] = 0; });
+  const msg = { t: "lobby", players: ON.players, section: ON.section, hostId: ON.me, scores: ON.scores };
+  ON.players.forEach((p) => { if (p.id !== ON.me) onSend(p.id, msg); });
+  openOnlineScreen();
+}
+function hostHandle(m, conn, remote) {
+  if (!m || typeof m !== "object") return;
+  if (m.t === "join") {
+    if (ON.phase !== "lobby") {
+      try { conn.send({ t: "reject", why: "La partida ja ha començat." }); } catch (e) {}
+      return;
+    }
+    if (ON.players.length >= ONLINE_MAX) {
+      try { conn.send({ t: "reject", why: "Sala plena: màxim " + ONLINE_MAX + " jugadors." }); } catch (e) {}
+      return;
+    }
+    ON.conns[remote] = conn;
+    ON.players.push({ id: remote, name: String(m.name || "Jugador " + (ON.players.length + 1)).slice(0, 16) });
+    ON.scores[remote] = 0;
+    try { conn.send({ t: "welcome", you: remote, code: ON.code, players: ON.players, section: ON.section, scores: ON.scores }); } catch (e) {}
+    hostLobby();
+    return;
+  }
+  if (ON.phase !== "play" || !ON.turn) return;
+  if (m.t === "pass" && remote === ON.turn.writerId && ON.turn.phase === "write") {
+    ON.turn.typed = (m.vals || []).map((v) => String(v || "").slice(0, 160));
+    ON.turn.phase = "check";
+    hostSendPhases();
+    return;
+  }
+  if (m.t === "verdict" && remote === ON.turn.checkerId && ON.turn.phase === "check") {
+    hostVerdict(!!m.good);
+  }
+}
+function onlineStart(section) {
+  if (!ON.host || ON.phase !== "lobby" || ON.players.length < 2) return;
+  ON.section = section || "mix";
+  ON.rows = buildOnlineRows(ON.section);
+  ON.scores = {}; ON.players.forEach((p) => { ON.scores[p.id] = 0; });
+  ON.rowIdx = -1; ON.turn = null; ON.xpDone = false;
+  ON.phase = "play"; ON.msg = "";
+  hostNextRow();
+}
+function hostNextRow() {
+  if (!ON.host || ON.phase !== "play") return;
+  ON.rowIdx++;
+  if (ON.rowIdx >= ON.rows.length) { hostGameOver(); return; }
+  const n = ON.players.length;
+  const q = ON.rows[ON.rowIdx];
+  ON.turn = {
+    rowIdx: ON.rowIdx, q, row: q.row, phase: "write",
+    writerId: ON.players[ON.rowIdx % n].id,
+    checkerId: ON.players[(ON.rowIdx + 1) % n].id,
+    typed: null,
+  };
+  hostSendPhases();
+}
+function phaseMsgFor(pid) {
+  const t = ON.turn, row = t.row;
+  const base = {
+    t: "phase", phase: t.phase, rowIdx: t.rowIdx, total: ON.rows.length,
+    writerId: t.writerId, checkerId: t.checkerId, scores: ON.scores, players: ON.players,
+  };
+  if (t.phase === "write") {
+    return pid === t.writerId
+      ? { ...base, you: "write", row: { title: row.title, cols: row.cols.map((c) => ({ label: c.label })) } }
+      : { ...base, you: "wait", rowTitle: row.title };
+  }
+  if (pid === t.checkerId) return { ...base, you: "check", row: { title: row.title, cols: row.cols }, typed: t.typed };
+  if (pid === t.writerId) return { ...base, you: "wait-writer", rowTitle: row.title };
+  return { ...base, you: "wait", rowTitle: row.title };
+}
+function hostSendPhases() {
+  ON.players.forEach((p) => {
+    const msg = phaseMsgFor(p.id);
+    if (p.id === ON.me) { ON.local = msg; ON.view = msg.you; }
+    else onSend(p.id, msg);
+  });
+  openOnlineScreen();
+}
+function hostVerdict(good) {
+  const t = ON.turn;
+  if (!t || t.phase !== "check") return;
+  const meta = covMeta(t.row, t.typed);
+  const autoGood = meta.overall >= 0.5;
+  const dW = good ? 100 : 0;
+  const dC = good === autoGood ? 60 : 0;
+  ON.scores[t.writerId] = (ON.scores[t.writerId] || 0) + dW;
+  ON.scores[t.checkerId] = (ON.scores[t.checkerId] || 0) + dC;
+  t.q.items.forEach((k) => sched(k, good));
+  const b = S.blocks[t.q.block] || (S.blocks[t.q.block] = { hit: 0, total: 0 });
+  b.total++; if (good) b.hit++;
+  save();
+  t.phase = "reveal";
+  const reveal = {
+    t: "phase", phase: "reveal", you: "reveal", rowIdx: t.rowIdx, total: ON.rows.length,
+    row: { title: t.row.title, cols: t.row.cols }, typed: t.typed,
+    good, autoGood, cov: meta.cols, overall: meta.overall,
+    deltaW: dW, deltaC: dC, writerId: t.writerId, checkerId: t.checkerId,
+    scores: ON.scores, players: ON.players,
+  };
+  ON.players.forEach((p) => {
+    if (p.id === ON.me) { ON.local = reveal; ON.view = "reveal"; }
+    else onSend(p.id, reveal);
+  });
+  openOnlineScreen();
+}
+function hostGameOver() {
+  ON.phase = "over"; ON.turn = null;
+  const msg = { t: "over", scores: ON.scores, players: ON.players };
+  ON.players.forEach((p) => { if (p.id !== ON.me) onSend(p.id, msg); });
+  grantOnlineXp();
+  openOnlineScreen();
+}
+
+/* ---------- GUEST ---------- */
+function onlineJoin(code, name) {
+  destroyOnline();
+  ON.host = false; ON.name = (name || "").trim().slice(0, 16) || "Jugador";
+  ON.code = String(code || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  ON.phase = "hub"; ON.msg = "Unint-se a la sala…"; ON.xpDone = false;
+  openOnlineScreen();
+  if (ON.code.length !== 6) { ON.msg = "⚠️ El codi té 6 caràcters."; openOnlineScreen(); return; }
+  const peer = makePeer();
+  if (!peer) { ON.msg = "⚠️ No s'ha pogut carregar PeerJS (cal connexió a internet)."; openOnlineScreen(); return; }
+  ON.peer = peer;
+  peer.on("open", () => {
+    ON.me = peer.id;
+    let opened = false;
+    let conn;
+    try { conn = peer.connect("bioestudi-" + ON.code, { reliable: true }); }
+    catch (e) { guestGone("No s'ha pogut connectar amb la sala."); return; }
+    ON.conn = conn;
+    conn.on("open", () => {
+      opened = true;
+      try { conn.send({ t: "join", name: ON.name }); } catch (e) {}
+      ON.msg = "Entrant…"; openOnlineScreen();
+    });
+    conn.on("data", (m) => guestHandle(m));
+    conn.on("close", () => { if (ON.phase !== "hub") guestGone("S'ha tancat la connexió amb la sala."); });
+    conn.on("error", () => guestGone("Error de connexió amb la sala."));
+    if (ON.guard) clearTimeout(ON.guard);
+    ON.guard = setTimeout(() => {
+      if (!opened) guestGone("No s'ha trobat la sala. Comprova el codi.");
+    }, 5000);
+  });
+  peer.on("error", (e) => {
+    const t = e && e.type;
+    if (t === "peer-unavailable") guestGone("No existeix aquesta sala o el codi és incorrecte.");
+    else { ON.msg = "⚠️ Error: " + (t || "desconegut"); openOnlineScreen(); }
+  });
+}
+function guestGone(why) {
+  ON.phase = "hub"; ON.msg = "⚠️ " + why;
+  ON.players = []; ON.local = null; ON.view = "wait"; ON.turn = null;
+  destroyOnline();
+  openOnlineScreen();
+}
+function guestHandle(m) {
+  if (!m || typeof m !== "object") return;
+  if (m.t === "reject") { guestGone(m.why || "No pots entrar a la sala."); return; }
+  if (m.t === "welcome") {
+    if (ON.guard) { clearTimeout(ON.guard); ON.guard = null; }
+    ON.me = m.you; ON.players = m.players; ON.section = m.section; ON.scores = m.scores || {};
+    ON.phase = "lobby"; ON.msg = "";
+    openOnlineScreen(); return;
+  }
+  if (m.t === "lobby") {
+    ON.players = m.players; ON.section = m.section; ON.scores = m.scores || ON.scores;
+    openOnlineScreen(); return;
+  }
+  if (m.t === "phase") {
+    ON.local = m; ON.view = m.you; ON.phase = "play";
+    ON.players = m.players || ON.players; ON.scores = m.scores || ON.scores;
+    openOnlineScreen(); return;
+  }
+  if (m.t === "over") {
+    ON.scores = m.scores; ON.players = m.players; ON.phase = "over";
+    grantOnlineXp(); openOnlineScreen(); return;
+  }
+  if (m.t === "bye") { guestGone(m.why || "La sala s'ha tancat."); }
+}
+function onPass(vals) {
+  if (!ON.turn && !ON.local) return;
+  if (ON.host) hostHandle({ t: "pass", vals }, null, ON.me);
+  else if (ON.conn) { try { ON.conn.send({ t: "pass", vals }); } catch (e) {} }
+}
+function onVerdict(good) {
+  if (ON.host) hostHandle({ t: "verdict", good }, null, ON.me);
+  else if (ON.conn) { try { ON.conn.send({ t: "verdict", good }); } catch (e) {} }
+}
+
+/* ---------- PANTALLES ---------- */
+function renderOnline() {
+  const v = $("onView");
+  if (!v) return;
+  if (ON.phase === "lobby") return renderOnLobby(v);
+  if (ON.phase === "play") return renderOnPlay(v);
+  if (ON.phase === "over") return renderOnOver(v);
+  renderOnHub(v);
+}
+function renderOnHub(v) {
+  v.innerHTML = `
+    <div class="on-head">🌐 Joc en línia <span class="on-max">fins a ${ONLINE_MAX} jugadors · sala amb codi únic</span></div>
+    <div class="on-grid">
+      <div class="on-card">
+        <h3>➕ Crea una sala</h3>
+        <div class="field-row"><label>El teu nom</label><input id="onHostName" maxlength="16" placeholder="Anna" autocomplete="off"></div>
+        <button class="btn btn-primary" id="onCreate">Crear sala 🎟️</button>
+      </div>
+      <div class="on-card">
+        <h3>🔑 Entra en una sala</h3>
+        <div class="field-row"><label>Codi de sala</label><input id="onJoinCode" maxlength="6" placeholder="K7X2QM" style="text-transform:uppercase;letter-spacing:4px;font-weight:800" autocomplete="off"></div>
+        <div class="field-row"><label>El teu nom</label><input id="onJoinName" maxlength="16" placeholder="Bernat" autocomplete="off"></div>
+        <button class="btn btn-primary" id="onJoin">Unir-me ▶️</button>
+      </div>
+    </div>
+    ${ON.msg ? `<p class="on-msg">${esc(ON.msg)}</p>` : ""}
+    <p class="on-note">📋 El codi es genera en crear la sala i <b>no es pot repetir</b> (es comprova que no hi sigui i s'eviten els codis recents). Comparteix-lo amb fins a 3 amics més.</p>`;
+  const cr = $("onCreate");
+  if (cr) cr.onclick = () => onlineCreate($("onHostName").value);
+  const jn = $("onJoin");
+  if (jn) jn.onclick = () => onlineJoin($("onJoinCode").value, $("onJoinName").value);
+}
+function renderOnLobby(v) {
+  const isHost = ON.host;
+  v.innerHTML = `
+    <div class="on-head">🎟️ Sala <b class="on-code">${esc(ON.code)}</b>
+      <button class="btn btn-small" id="onCopy">Copia</button></div>
+    <div class="on-players">
+      ${ON.players.map((p) => `<span class="on-chip${p.id === ON.me ? " me" : ""}">${p.id === ON.players[0].id ? "👑 " : ""}${esc(p.name)}${p.id === ON.me ? " (tu)" : ""}</span>`).join("")}
+      ${Array.from({ length: ONLINE_MAX - ON.players.length }, () => `<span class="on-chip empty">+ lliure</span>`).join("")}
+    </div>
+    ${isHost ? `
+      <div class="on-card">
+        <div class="field-row"><label>Tema de la partida</label>
+          <select id="onSection">
+            <option value="mix">🎲 Barreja (totes les seccions)</option>
+            ${SECTIONS.map((s) => `<option value="${s.id}">${s.ico} ${esc(s.title)}</option>`).join("")}
+          </select></div>
+        <button class="btn btn-primary" id="onStart" ${ON.players.length < 2 ? "disabled" : ""}>▶️ Comença (${ON.players.length}/${ONLINE_MAX})</button>
+        <p class="on-note">${ON.players.length < 2 ? "Calen com a mínim 2 jugadors." : "Els rols canvien en cada fila: un escriu, el següent revisa amb chuleta."}</p>
+      </div>`
+      : `<div class="wait-card">⏳ Esperant que <b>${esc(ON.players[0] ? ON.players[0].name : "el host")}</b> comenci la partida…</div>`}
+    <button class="btn btn-ghost" id="onLeave">✕ Surt de la sala</button>`;
+  const cp = $("onCopy");
+  if (cp) cp.onclick = () => {
+    try { navigator.clipboard.writeText(ON.code); ON.msg = "📋 Codi copiat!"; } catch (e) { ON.msg = "Copia el codi a mà."; }
+    renderOnline();
+  };
+  const st = $("onStart");
+  if (st) st.onclick = () => onlineStart($("onSection").value);
+  const lv = $("onLeave");
+  if (lv) lv.onclick = () => leaveOnline();
+}
+function scoresBar() {
+  return `<div class="on-scores">${ON.players.map((p) =>
+    `<span class="on-chip score${p.id === ON.me ? " me" : ""}">${esc(p.name)} <b>${ON.scores[p.id] || 0}</b></span>`).join("")}</div>`;
+}
+function renderOnPlay(v) {
+  const m = ON.local;
+  if (!m) { v.innerHTML = `<div class="wait-card">⏳ Connectant amb la partida…</div>`; return; }
+  const turnInfo = `<div class="on-turn">Fila <b>${m.rowIdx + 1}/${m.total}</b> · ✍️ ${esc(pname(m.writerId))} escriu · 🔎 ${esc(pname(m.checkerId))} revisa</div>`;
+  let body = "";
+  if (m.you === "write") {
+    body = `
+      <div class="qcard on-play">
+        <div class="q-kind">✍️ Torn d'escriure la taula</div>
+        <div class="q-prompt">Completa la fila: <b>${esc(m.row.title)}</b></div>
+        <div class="q-body">
+          ${m.row.cols.map((c, i) => `<div class="field-row"><label>${esc(c.label)}</label><input class="on-w" data-i="${i}" autocomplete="off"></div>`).join("")}
+        </div>
+        <div class="q-actions"><button class="btn btn-primary" id="onPass">Passo-ho al revisor ➜</button></div>
+      </div>
+      <p class="on-note">No miris la chuleta! 💪 El text real apareixerà després del veredicte.</p>`;
+  } else if (m.you === "check") {
+    body = `
+      <div class="qcard on-play">
+        <div class="q-kind">🔎 Torn de revisar</div>
+        <div class="q-prompt">Revisa el que ha escrit <b>${esc(pname(m.writerId))}</b>: <b>${esc(m.row.title)}</b></div>
+        <div class="q-body">
+          ${m.row.cols.map((c, i) => `
+            <div class="duo-cmp"><div class="cmp-line"><span class="lbl">Hi deia ${esc(pname(m.writerId))}</span><div class="typed">${esc((m.typed || [])[i] || "—")}</div></div></div>`).join("")}
+          <div class="chuleta">📝 <b>CHULETA</b> (el text real — el teu full de trucada)
+            ${m.row.cols.map((c) => `<div class="ch-row"><span class="ch-lbl">${esc(c.label)}</span> ${esc(c.real)}</div>`).join("")}
+          </div>
+        </div>
+        <div class="q-actions">
+          <button class="btn btn-ok" id="onGood">👌 Ho dono per bona</button>
+          <button class="btn btn-no" id="onBad">❌ És una fallada</button>
+        </div>
+      </div>`;
+  } else if (m.you === "reveal") {
+    body = `
+      <div class="qcard on-play">
+        <div class="q-kind">🔍 Revelació</div>
+        <div class="q-prompt ${m.good ? "ok-t" : "bad-t"}">${m.good ? "✅ Donada per bona" : "❌ Fallada"} — <b>${esc(m.row.title)}</b></div>
+        <div class="q-body">
+          ${m.row.cols.map((c, i) => `
+            <div class="duo-cmp">
+              <div class="cmp-line"><span class="lbl">Hi deia ${esc(pname(m.writerId))}</span><div class="typed">${esc((m.typed || [])[i] || "—")}</div></div>
+              <div class="cmp-line real"><span class="lbl">Text real</span><div>${esc(c.real)}</div></div>
+              <span class="on-badge">${covBadge(m.cov[i])} ${Math.round(m.cov[i] * 100)}% del text real</span>
+            </div>`).join("")}
+          <div class="on-deltas">✍️ ${esc(pname(m.writerId))} <b>${m.deltaW ? "+" + m.deltaW : "+0"}</b> · 🔎 ${esc(pname(m.checkerId))} <b>${m.deltaC ? "+" + m.deltaC : "+0"}</b> ${m.good === m.autoGood ? "" : "· ⚠️ el veredicte no coincideix amb l'estimació automàtica"}</div>
+        </div>
+        <div class="q-actions">
+          ${ON.host ? `<button class="btn btn-primary" id="onNext">${m.rowIdx + 1 >= m.total ? "🏁 Veure resultats" : "Següent fila ➜"}</button>`
+                    : `<span class="on-note">Esperant que 👑 ${esc(ON.players[0] ? ON.players[0].name : "host")} passi d'fila…</span>`}
+        </div>
+      </div>`;
+  } else {
+    const writing = m.phase === "write";
+    body = `
+      <div class="wait-card big">
+        <div class="wait-ico">${writing ? "✍️" : "🔎"}</div>
+        <div>${writing ? `<b>${esc(pname(m.writerId))}</b> està completant la taula…` : `<b>${esc(pname(m.checkerId))}</b> està revisant amb la chuleta…`}</div>
+        <div class="wait-dots"><span>●</span><span>●</span><span>●</span></div>
+      </div>
+      ${m.you === "wait-writer" ? `<p class="on-note">Ja has escrit la fila — ara et toca esperar el veredicte de ${esc(pname(m.checkerId))}.</p>` : ""}`;
+  }
+  v.innerHTML = `<div class="on-head small">🌐 Sala ${esc(ON.code)}</div>${scoresBar()}${turnInfo}${body}
+    <div class="on-foot"><button class="btn btn-ghost" id="onLeave">✕ Surt</button></div>`;
+  const pass = $("onPass");
+  if (pass) pass.onclick = () => {
+    const vals = [...v.querySelectorAll(".on-w")].map((inp) => inp.value);
+    if (vals.every((x) => !x.trim())) { ON.msg = ""; alertHint(); return; }
+    onPass(vals);
+  };
+  const gd = $("onGood"); if (gd) gd.onclick = () => onVerdict(true);
+  const bd = $("onBad"); if (bd) bd.onclick = () => onVerdict(false);
+  const nx = $("onNext"); if (nx) nx.onclick = () => hostNextRow();
+  const lv = $("onLeave"); if (lv) lv.onclick = () => leaveOnline();
+}
+function alertHint() {
+  const a = document.querySelector("#onView .on-note.warn");
+  if (a) a.remove();
+  const p = document.createElement("p");
+  p.className = "on-note warn";
+  p.textContent = "Escriu alguna cosa abans de passar-ho 🙂";
+  const card = document.querySelector("#onView .on-play");
+  if (card) card.after(p);
+}
+function renderOnOver(v) {
+  const ranked = [...ON.players].sort((a, b) => (ON.scores[b.id] || 0) - (ON.scores[a.id] || 0));
+  const top = ranked[0];
+  const medals = ["🥇", "🥈", "🥉", "🏅"];
+  v.innerHTML = `
+    <div class="on-head">🏆 Fi de la partida</div>
+    <div class="wait-card big"><div class="wait-ico">${medals[0]}</div>
+      <div>Guanya <b>${esc(top ? top.name : "?")}</b> amb <b>${ON.scores[top ? top.id : ""] || 0}</b> punts!</div></div>
+    <div class="podium">
+      ${ranked.map((p, i) => `<div class="pod-row${p.id === ON.me ? " me" : ""}"><span>${medals[i] || "🏅"}</span><span class="p-name">${esc(p.name)}</span><b>${ON.scores[p.id] || 0}</b></div>`).join("")}
+    </div>
+    <div class="on-foot">
+      ${ON.host ? `<button class="btn btn-primary" id="onAgain">🔄 Altra partida</button>` : ""}
+      <button class="btn" id="onHome">🏠 Menú</button>
+    </div>`;
+  const ag = $("onAgain");
+  if (ag) ag.onclick = () => { ON.phase = "lobby"; ON.xpDone = false; hostLobby(); };
+  const hm = $("onHome"); if (hm) hm.onclick = () => leaveOnline();
+}
+
 /* ============ clavier ============ */
 document.addEventListener("keydown", (e) => {
   if ($("screen-game").hidden) return;
@@ -1133,7 +1684,11 @@ function init() {
   size();
   addEventListener("resize", size);
   document.querySelectorAll(".mode-card").forEach((el) => {
-    el.onclick = () => { sfx("click"); startMode(el.dataset.mode); };
+    el.onclick = () => {
+      sfx("click");
+      if (el.dataset.mode === "online") openOnline();
+      else startMode(el.dataset.mode);
+    };
   });
   $("dueBtn").onclick = () => { sfx("click"); startMode("review"); };
   $("quitBtn").onclick = () => { clearTimers(); goBackAfterGame(); };
@@ -1191,6 +1746,14 @@ const G = {
   },
   dueKeys, starKeys, S: () => S,
   confetti: (n) => confetti(n),
+  openOnline, onlineCreate, onlineJoin, onlineStart, leaveOnline, onPass, onVerdict,
+  onHostNext: () => hostNextRow(),
+  onState: () => ({
+    phase: ON.phase, code: ON.code, players: ON.players, view: ON.view,
+    local: ON.local, scores: ON.scores, msg: ON.msg, host: ON.host, me: ON.me,
+    rows: ON.rows,
+    turn: ON.turn ? { phase: ON.turn.phase, writerId: ON.turn.writerId, checkerId: ON.turn.checkerId } : null,
+  }),
 };
 function submitFieldsFills(q) {
   const rows = $("qBody").querySelectorAll(".field-row");

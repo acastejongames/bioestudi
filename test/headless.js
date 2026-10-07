@@ -47,6 +47,106 @@ function check(cond, msg) {
   else { fail++; console.log("  ✗ " + msg); }
 }
 
+/* ---------- Fake PeerJS: simulació de xarxa en memòria per a l'online ---------- */
+const fakeRegistry = new Map();
+function pairConns(idA, idB) {
+  const mk = (selfId, otherId) => ({
+    peer: otherId, _cbs: {}, _dead: false, _other: null,
+    on(ev, cb) { (this._cbs[ev] = this._cbs[ev] || []).push(cb); },
+    _emit(ev, d) {
+      (this._cbs[ev] || []).slice().forEach((f) => { try { f(d); } catch (e) { console.error("conn handler:", e); } });
+    },
+    send(o) {
+      const payload = JSON.parse(JSON.stringify(o));
+      const oth = this._other;
+      setTimeout(() => { if (!this._dead && oth && !oth._dead) oth._emit("data", payload); }, 0);
+    },
+    close() {
+      if (this._dead) return;
+      this._dead = true;
+      const oth = this._other;
+      if (oth && !oth._dead) setTimeout(() => oth._emit("close"), 0);
+    },
+  });
+  const a = mk(idA, idB), b = mk(idB, idA);
+  a._other = b; b._other = a;
+  return [a, b];
+}
+function makeFakePeer(idArg) {
+  const wantId = typeof idArg === "string" ? idArg : null;
+  const peer = {
+    id: wantId || "auto-" + Math.random().toString(36).slice(2, 10),
+    _cbs: {}, _conns: [], _destroyed: false,
+    on(ev, cb) { (this._cbs[ev] = this._cbs[ev] || []).push(cb); },
+    _emit(ev, d) {
+      (this._cbs[ev] || []).slice().forEach((f) => { try { f(d); } catch (e) { console.error("peer handler:", e); } });
+    },
+    connect(targetId) {
+      const [c1, c2] = pairConns(this.id, targetId);
+      this._conns.push(c1);
+      const target = fakeRegistry.get(targetId);
+      if (!target || target._destroyed) {
+        setTimeout(() => this._emit("error", { type: "peer-unavailable" }), 0);
+        return c1;
+      }
+      target._conns.push(c2);
+      setTimeout(() => { if (!target._destroyed) target._emit("connection", c2); }, 0);
+      setTimeout(() => { c1._emit("open"); c2._emit("open"); }, 0);
+      return c1;
+    },
+    destroy() {
+      if (this._destroyed) return;
+      this._destroyed = true;
+      if (fakeRegistry.get(this.id) === this) fakeRegistry.delete(this.id);
+      this._conns.forEach((c) => {
+        if (c._dead) return;
+        c._dead = true;
+        const oth = c._other;
+        if (oth && !oth._dead) oth._emit("close");
+      });
+      this._conns = [];
+    },
+  };
+  if (wantId && fakeRegistry.has(wantId)) {
+    setTimeout(() => peer._emit("error", { type: "unavailable-id" }), 0);
+  } else {
+    fakeRegistry.set(peer.id, peer);
+    setTimeout(() => peer._emit("open", peer.id), 0);
+  }
+  return peer;
+}
+window.__peerFactory = (id) => makeFakePeer(id);
+const fxStub = () => null;
+function makeClient(label) {
+  const d = new JSDOM(html, { url: "http://localhost/", runScripts: "outside-only", pretendToBeVisual: true });
+  const win = d.window;
+  win.scrollTo = () => {};
+  const errs = [];
+  win.addEventListener("error", (e) => errs.push(String(e.error || e.message)));
+  win.eval(
+    fs.readFileSync(path.join(REPO, "data.js"), "utf8") +
+    "\n;\n" +
+    fs.readFileSync(path.join(REPO, "game.js"), "utf8")
+  );
+  const fx = win.document.getElementById("fx");
+  fx.getContext = (kind) => (kind === "2d" ? ctxStub : null);
+  win.__peerFactory = (id) => makeFakePeer(id);
+  const c = { label, win, G: win.G, doc: win.document, errs };
+  CLIENTS[label] = c;
+  return c;
+}
+const CLIENTS = {};
+function k2c(k) { return CLIENTS[k]; }
+function k2v(k) { const c = k2c(k); return c ? c.G.onState().view : null; }
+function k2phase(k) { const c = k2c(k); return c ? c.G.onState().phase : null; }
+async function fakeUntil(fn, ms = 4000) {
+  const t0 = Date.now();
+  while (!fn()) {
+    if (Date.now() - t0 > ms) throw new Error("timeout esperant condició online");
+    await new Promise((r) => setTimeout(r, 8));
+  }
+}
+
 function spin(maxIter = 5000) {
   let n = 0;
   while (n++ < maxIter) {
@@ -76,6 +176,7 @@ async function runMode(mode, { mistakeFirst = false } = {}) {
       if (R.graded) {
         wantMistake = false;
         check(G.starKeys().length >= 1, `${mode}: l'error queda marcat amb ⭐ per repàs`);
+        check(G.dueKeys().length >= 1, `${mode}: repàs pendent al moment de l'error`);
       }
       continue;
     }
@@ -94,7 +195,8 @@ function checkNoRepeats(mode) {
   console.log("== init ==");
   check(G.dueKeys, "API exposta");
   check(!window.document.getElementById("screen-home").hidden, "home visible en iniciar");
-  check(window.document.querySelectorAll(".mode-card").length === 6, "6 modes a la portada");
+  check(window.document.querySelectorAll(".mode-card").length === 7, "7 modes a la portada");
+  check(window.document.querySelector('.mode-card[data-mode="online"]'), "targeta Online · sala amb codi a la portada");
   check(window.document.querySelectorAll("#secGrid .sec-card").length === 5, "5 seccions a la portada");
   check(window.document.body.dataset.screen === "home", "body[data-screen]=home en iniciar");
   check(window.document.querySelector("#screen-game .game-top #gProgress"), "HUD + progress dins del contenidor .game-top (per a sticky al mòbil)");
@@ -128,8 +230,9 @@ function checkNoRepeats(mode) {
   await runMode("session", { mistakeFirst: true });
   const missed = G.missed();
   check(missed.length >= 1, `errors registrats (${missed.length})`);
-  check(G.dueKeys().length > 0, `repàs pendent després de l'error (${G.dueKeys().length})`);
-  check(!window.document.getElementById("rStarsNote").hidden, "nota ⭐ visible quan hi ha errors");
+  check(G.starKeys().length === 0 || G.dueKeys().length > 0, `les preguntes amb ⭐ surten com a repàs pendent (${G.dueKeys().length})`);
+  const note = window.document.getElementById("rStarsNote");
+  check(note.hidden === !(G.missed().length && G.starKeys().length), "nota ⭐ coherent amb errors i ⭐ pendents");
   G.startMode("retry", [...missed], "retry");
   check(G.inGame(), "mode retry obert");
   check(spin(), "retry completat");
@@ -274,6 +377,125 @@ function checkNoRepeats(mode) {
   check(spin(), "segona orgmix completada");
   window.document.getElementById("rHome").click();
   check(!window.document.getElementById("screen-home").hidden, "🏠 rHome torna a l'inici");
+
+  // ====== ONLINE — sala amb codi, fins a 4 jugadors ======
+  console.log("\n== online: sala amb codi, 2–4 jugadors ==");
+  try {
+    fakeRegistry.set("bioestudi-ZZZZZZ", { placeholder: true });
+    const A = makeClient("A");
+    A.G.onlineCreate("Anna", "ZZZZZZ");
+    await fakeUntil(() => A.G.onState().phase === "lobby");
+    const code = A.G.onState().code;
+    check(code && code.length === 6 && code !== "ZZZZZZ", `codi de sala de 6 caràcters i únic (${code}; el ZZZZZZ ja existia i s'ha reintentat)`);
+    check(A.G.onState().host && A.G.onState().players.length === 1, "host dins la lobby amb el seu nom");
+    check(A.doc.body.dataset.screen === "online", "body[data-screen]=online");
+
+    const F = makeClient("F");
+    F.G.onlineJoin("QQQQQQ", "Fred");
+    await fakeUntil(() => F.G.onState().phase === "hub" && F.G.onState().msg.includes("No existeix"));
+    check(true, "codi inexistent → missatge 'No existeix aquesta sala'");
+
+    const B = makeClient("B"), C = makeClient("C"), D = makeClient("D");
+    B.G.onlineJoin(code, "Bernat");
+    await fakeUntil(() => B.G.onState().phase === "lobby" && A.G.onState().players.length === 2);
+    check(!B.G.onState().host && B.G.onState().code === code, "B entra a la sala amb el codi (guest)");
+    C.G.onlineJoin(code, "Clara");
+    await fakeUntil(() => A.G.onState().players.length === 3);
+    D.G.onlineJoin(code, "Dídac");
+    await fakeUntil(() => A.G.onState().players.length === 4);
+    check(true, "4 jugadors dins la sala (host + 3)");
+
+    const E = makeClient("E");
+    E.G.onlineJoin(code, "Edu");
+    await fakeUntil(() => E.G.onState().phase === "hub" && /plena/.test(E.G.onState().msg));
+    check(A.G.onState().players.length === 4, "5è jugador rebutjat: sala plena (màxim 4)");
+
+    A.G.onlineStart("organitzacio");
+    await fakeUntil(() => A.G.onState().view === "write");
+    const st0 = A.G.onState();
+    check(st0.local && st0.local.you === "write", "fila 1: el host escriu la taula");
+    check(st0.local.row.cols.every((c) => c.real === undefined), "mentre s'escriu NO es reparteix el text real (anti-spoiler)");
+    await fakeUntil(() => B.G.onState().view === "wait" && C.G.onState().view === "wait" && D.G.onState().view === "wait");
+    check(true, "els altres 3 esperen qui escriu");
+
+    const real0 = st0.rows[0].row.cols[0].real;
+    A.doc.querySelector("#onView .on-w").value = real0;
+    A.doc.getElementById("onPass").click();
+    await fakeUntil(() => B.G.onState().view === "check");
+    check(B.doc.getElementById("onView").textContent.includes("CHULETA"), "B (revisor) rep la chuleta al costat");
+    check(B.doc.getElementById("onView").textContent.includes(real0), "chuleta amb el text real");
+    check(!C.doc.getElementById("onView").textContent.includes(real0), "C (espectador) NO rep el text real (sense spoilers)");
+    check(!D.doc.getElementById("onView").textContent.includes(real0), "D tampoc no rep el text real");
+
+    B.doc.getElementById("onGood").click();
+    await fakeUntil(() => ["A", "B", "C", "D"].every((k) => k2v(k) === "reveal"));
+    const rvA = A.doc.getElementById("onView").textContent;
+    check(rvA.includes("Text real"), "veredicte bo: el text real es revela a tothom");
+    check(rvA.includes(real0), "revelació amb el text real complet");
+    check(A.G.onState().scores[A.G.onState().me] === 100, "escriptor correcte +100");
+    check(A.G.onState().scores[B.G.onState().me] === 60, "revisor coherent amb l'estimació +60");
+    check(rvA.includes("Següent fila") || rvA.includes("resultats"), "el host avança d'fila");
+    check(!B.doc.getElementById("onView").textContent.includes("Següent fila"), "els guests esperen que el host passi d'fila");
+
+    // fila 2: escriu B, revisa C — fallada donada per bona fallida
+    A.G.onHostNext();
+    await fakeUntil(() => B.G.onState().view === "write");
+    B.doc.querySelector("#onView .on-w").value = "resposta incorrecta";
+    B.doc.getElementById("onPass").click();
+    await fakeUntil(() => C.G.onState().view === "check");
+    check(C.doc.getElementById("onView").textContent.includes("CHULETA"), "C rep la chuleta a la seva fila de revisió");
+    C.doc.getElementById("onBad").click();
+    await fakeUntil(() => A.G.onState().view === "reveal" && A.G.onState().local.good === false);
+    check(A.G.onState().local.autoGood === false, "fallada real: l'estimació automàtica també diu fallada");
+    check(A.G.onState().scores[C.G.onState().me] === 60, "revisor que encerta el veredicte +60");
+    check(A.G.onState().scores[B.G.onState().me] === 60, "escriptor rebutjat es queda amb 60");
+
+    // files 3 i 4: mateix flux via API
+    A.G.onHostNext();
+    await fakeUntil(() => C.G.onState().view === "write");
+    C.G.onPass(["x"]);
+    await fakeUntil(() => D.G.onState().view === "check");
+    D.G.onVerdict(false);
+    await fakeUntil(() => A.G.onState().view === "reveal");
+    A.G.onHostNext();
+    await fakeUntil(() => D.G.onState().view === "write");
+    D.G.onPass(["x"]);
+    await fakeUntil(() => A.G.onState().view === "check");
+    A.G.onVerdict(false);
+    await fakeUntil(() => A.G.onState().view === "reveal");
+    check(A.G.onState().local.writerId === D.G.onState().me, "rotació de rols: a la fila 4 escriu D i revisa el host");
+
+    const xpBefore = A.G.S().xp;
+    const xpB = B.G.S().xp;
+    A.G.onHostNext();
+    await fakeUntil(() => ["A", "B", "C", "D"].every((k) => k2phase(k) === "over"));
+    check(true, "fi de partida per a tots els jugadors");
+    const fin = A.G.onState();
+    check(fin.scores[fin.me] === 160, `puntuació final del host 160 (${JSON.stringify(fin.scores)})`);
+    check(A.doc.getElementById("onView").textContent.includes("Guanya"), "podi amb el guanyador");
+    check(A.G.S().xp >= xpBefore + 16, `XP del host en línia (+${A.G.S().xp - xpBefore} = punts/10)`);
+    check(B.G.S().xp === xpB + 6, `XP del guest B (+${B.G.S().xp - xpB})`);
+
+    A.G.leaveOnline();
+    await fakeUntil(() => ["B", "C", "D"].every((k) => k2phase(k) === "hub"));
+    check(B.G.onState().msg.length > 0 && C.G.onState().msg.length > 0, "host surt → la sala es tanca per a la resta");
+
+    // codis no repetits entre sales de la mateixa sessió
+    A.G.onlineCreate("Anna");
+    await fakeUntil(() => A.G.onState().phase === "lobby");
+    check(A.G.onState().code !== code, `nou codi diferent del precedent (${code} → ${A.G.onState().code})`);
+    A.G.leaveOnline();
+
+    const onlineErrs = [...A.errs, ...B.errs, ...C.errs, ...D.errs, ...E.errs, ...F.errs];
+    check(onlineErrs.length === 0, "sense errors JS als clients online" + (onlineErrs.length ? ": " + onlineErrs.join(" | ") : ""));
+  } catch (e) {
+    const diag = {};
+    ["A", "B", "C", "D"].forEach((k) => {
+      const c = CLIENTS[k];
+      if (c) { const st = c.G.onState(); diag[k] = { phase: st.phase, view: st.view, turn: st.turn, errs: c.errs.slice(0, 3) }; }
+    });
+    check(false, "excepció al bloc online: " + (e.stack || e.message) + " || diag=" + JSON.stringify(diag));
+  }
 
   // neteja errors de window
   check(errors.length === 0, "sense errors JS a window" + (errors.length ? ": " + errors.join(" | ") : ""));

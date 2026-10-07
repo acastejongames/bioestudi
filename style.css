@@ -647,3 +647,137 @@ table.sheet.cover td.ans.rev .v { filter: none; opacity: 1; }
   .on-head { flex-direction: column; align-items: flex-start; gap: 6px; }
   .on-code { letter-spacing: 4px; }
 }
+
+/* ============ 🌐 ONLINE — taula de la partida ============ */
+.on-topic {
+  background: var(--card);
+  border: 1px solid var(--card-brd);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  margin: 6px 0 14px;
+  font-size: 15px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.on-topic .on-note { margin: 0; }
+.on-sub {
+  font-size: 13px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+  color: var(--mut);
+  margin: 14px 2px 8px;
+}
+.on-tablewrap {
+  overflow-x: auto;
+  margin: 10px 0 4px;
+  border: 1px solid var(--card-brd);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.03);
+}
+table.on-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14.5px;
+  line-height: 1.45;
+}
+.on-table thead th {
+  text-align: left;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+  color: var(--mut);
+  padding: 9px 10px;
+  border-bottom: 2px solid var(--card-brd);
+  white-space: nowrap;
+  background: rgba(255, 255, 255, 0.04);
+}
+.on-table th.rt-h { color: var(--c2); }
+.on-table td {
+  padding: 9px 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  vertical-align: top;
+}
+.on-table tbody tr:last-child td { border-bottom: none; }
+.on-table .row-t {
+  font-weight: 800;
+  color: var(--c2);
+  min-width: 120px;
+  max-width: 240px;
+}
+.on-table td.ans.done .v { color: var(--ok); font-weight: 600; }
+.on-table td.pad { opacity: 0.35; }
+.on-table tr.now-row { background: rgba(0, 212, 255, 0.07); }
+.on-table tr.now-row .row-t { color: #fff; }
+.on-table td.now { min-width: 150px; }
+.on-table td.now input.on-w {
+  width: 100%;
+  min-height: 46px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1.5px dashed var(--card-brd);
+  border-radius: 10px;
+  color: var(--txt);
+  padding: 8px 10px;
+  font: inherit;
+}
+.on-table td.now input.on-w:focus {
+  border-style: solid;
+  border-color: var(--c2);
+  outline: none;
+  background: rgba(255, 255, 255, 0.12);
+  box-shadow: 0 0 0 3px rgba(0, 212, 255, 0.18);
+}
+.cap-lbl {
+  display: block;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--mut);
+  margin-bottom: 2px;
+}
+@media (max-width: 700px) {
+  table.on-table thead { display: none; }
+  .on-table, .on-table tbody, .on-table tr, .on-table td { display: block; width: 100%; }
+  .on-table thead { display: none; }
+  .on-table tr {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--card-brd);
+    border-radius: 14px;
+    margin: 10px;
+    width: auto;
+    padding: 4px 6px;
+  }
+  .on-table tr.now-row { background: rgba(0, 212, 255, 0.09); border-color: var(--c2); }
+  .on-table td {
+    border-bottom: none;
+    padding: 7px 9px;
+  }
+  .on-table .row-t {
+    max-width: none;
+    padding-bottom: 7px;
+    border-bottom: 1px dashed rgba(255, 255, 255, 0.14);
+  }
+  .on-table td.ans.now::before {
+    content: attr(data-th);
+    display: block;
+    font-size: 10.5px;
+    font-weight: 800;
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+    color: var(--mut);
+    margin-bottom: 3px;
+  }
+  .on-table td.ans.done::before {
+    content: attr(data-th);
+    display: block;
+    font-size: 10.5px;
+    font-weight: 800;
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+    color: var(--mut);
+    margin-bottom: 2px;
+  }
+  .on-table td.ans.done:has(.cap-lbl)::before { content: none; }
+}

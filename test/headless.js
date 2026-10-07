@@ -383,12 +383,13 @@ function checkNoRepeats(mode) {
   try {
     fakeRegistry.set("bioestudi-ZZZZZZ", { placeholder: true });
     const A = makeClient("A");
-    A.G.onlineCreate("Anna", "ZZZZZZ");
+    A.G.onlineCreate("Anna", "ZZZZZZ", "minerals");
     await fakeUntil(() => A.G.onState().phase === "lobby");
     const code = A.G.onState().code;
     check(code && code.length === 6 && code !== "ZZZZZZ", `codi de sala de 6 caràcters i únic (${code}; el ZZZZZZ ja existia i s'ha reintentat)`);
     check(A.G.onState().host && A.G.onState().players.length === 1, "host dins la lobby amb el seu nom");
     check(A.doc.body.dataset.screen === "online", "body[data-screen]=online");
+    check(A.doc.getElementById("onSection") && A.doc.getElementById("onSection").value === "minerals", "tema triat en crear (Sals minerals) es manté a la lobby");
 
     const F = makeClient("F");
     F.G.onlineJoin("QQQQQQ", "Fred");
@@ -399,6 +400,12 @@ function checkNoRepeats(mode) {
     B.G.onlineJoin(code, "Bernat");
     await fakeUntil(() => B.G.onState().phase === "lobby" && A.G.onState().players.length === 2);
     check(!B.G.onState().host && B.G.onState().code === code, "B entra a la sala amb el codi (guest)");
+    check(B.doc.getElementById("onView").textContent.includes("Sals minerals"), "el guest ve el tema de la sala");
+    const selA = A.doc.getElementById("onSection");
+    selA.value = "organitzacio";
+    selA.dispatchEvent(new A.win.Event("change"));
+    await fakeUntil(() => B.doc.getElementById("onView").textContent.includes("Nivells d'organització"));
+    check(A.G.onState().section === "organitzacio", "el host canvia el tema a la lobby i tots ho reben");
     C.G.onlineJoin(code, "Clara");
     await fakeUntil(() => A.G.onState().players.length === 3);
     D.G.onlineJoin(code, "Dídac");
@@ -409,12 +416,18 @@ function checkNoRepeats(mode) {
     E.G.onlineJoin(code, "Edu");
     await fakeUntil(() => E.G.onState().phase === "hub" && /plena/.test(E.G.onState().msg));
     check(A.G.onState().players.length === 4, "5è jugador rebutjat: sala plena (màxim 4)");
+    check(E.doc.getElementById("onHubSection"), "select de tema també en crear la sala");
 
     A.G.onlineStart("organitzacio");
     await fakeUntil(() => A.G.onState().view === "write");
     const st0 = A.G.onState();
     check(st0.local && st0.local.you === "write", "fila 1: el host escriu la taula");
     check(st0.local.row.cols.every((c) => c.real === undefined), "mentre s'escriu NO es reparteix el text real (anti-spoiler)");
+    check(!!A.doc.querySelector("#onView table.on-table"), "s'escriu DINS la taula (no un formulari)");
+    check(A.doc.querySelectorAll("#onView .on-play .field-row").length === 0, "el formulari simple ja no hi és");
+    check(A.doc.querySelectorAll("#onView .on-table tbody tr").length === 1, "la taula només mostra la fila actual (cap completada encara)");
+    check(A.doc.querySelectorAll("#onView .on-table input.on-w").length === st0.local.row.cols.length, "els camps d'entrada són cel·les de la taula");
+    check(A.doc.querySelectorAll("#onView .on-table thead th").length === 1 + st0.local.row.cols.length, "capçalera de la taula: Element + columnes");
     await fakeUntil(() => B.G.onState().view === "wait" && C.G.onState().view === "wait" && D.G.onState().view === "wait");
     check(true, "els altres 3 esperen qui escriu");
 
@@ -440,6 +453,11 @@ function checkNoRepeats(mode) {
     // fila 2: escriu B, revisa C — fallada donada per bona fallida
     A.G.onHostNext();
     await fakeUntil(() => B.G.onState().view === "write");
+    await fakeUntil(() => C.G.onState().local && C.G.onState().local.rowIdx === 1 && D.G.onState().local && D.G.onState().local.rowIdx === 1);
+    check(B.doc.querySelectorAll("#onView .on-table tbody tr").length === 2, "fila 2: la taula mostra la fila completada + l'actual");
+    check(B.doc.querySelector("#onView .on-table .done-row") && B.doc.getElementById("onView").textContent.includes(real0), "la fila completada es mostra amb el text real i ✅");
+    check(B.doc.querySelector("#onView .on-table .done-row").textContent.includes("✅"), "veredicte bo marcat a la taula");
+    check(!!C.doc.querySelector("#onView table.on-table") && C.doc.querySelectorAll("#onView .on-table input").length === 0, "l'espectador ve la taula completada sense camps d'edició");
     B.doc.querySelector("#onView .on-w").value = "resposta incorrecta";
     B.doc.getElementById("onPass").click();
     await fakeUntil(() => C.G.onState().view === "check");

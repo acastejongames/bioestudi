@@ -1113,7 +1113,7 @@ const ONLINE_MAX = 4;
 const CODE_ALPHA = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const ON = {
   phase: "hub", code: "", host: false, me: "", name: "",
-  players: [], section: "mix", scores: {},
+  players: [], section: "mix", scores: {}, done: [],
   peer: null, conns: {}, conn: null,
   rows: [], rowIdx: -1, turn: null,
   local: null, view: "wait", msg: "", xpDone: false,
@@ -1215,6 +1215,7 @@ function leaveOnline() {
   destroyOnline();
   ON.code = ""; ON.msg = ""; ON.players = []; ON.scores = {};
   ON.local = null; ON.view = "wait"; ON.turn = null; ON.xpDone = false;
+  ON.done = []; ON.section = "mix";
   show("home"); renderHome();
 }
 function openOnline() {
@@ -1235,9 +1236,10 @@ function grantOnlineXp() {
 }
 
 /* ---------- HOST ---------- */
-function onlineCreate(name, forceCode) {
+function onlineCreate(name, forceCode, section) {
   destroyOnline();
   ON.host = true; ON.name = (name || "").trim().slice(0, 16) || "Jugador 1";
+  ON.section = section || "mix"; ON.done = [];
   ON.phase = "hub"; ON.msg = "Connectant…"; ON.xpDone = false;
   openOnlineScreen();
   tryCreate(0, forceCode);
@@ -1287,7 +1289,7 @@ function hostDrop(id) {
 function hostEnd(why) {
   const msg = { t: "bye", why };
   ON.players.forEach((p) => { if (p.id !== ON.me) onSend(p.id, msg); });
-  ON.phase = "hub"; ON.msg = "⚠️ " + why; ON.players = []; ON.local = null; ON.turn = null;
+  ON.phase = "hub"; ON.msg = "⚠️ " + why; ON.players = []; ON.local = null; ON.turn = null; ON.done = [];
   destroyOnline();
   openOnlineScreen();
 }
@@ -1335,7 +1337,7 @@ function onlineStart(section) {
   ON.section = section || "mix";
   ON.rows = buildOnlineRows(ON.section);
   ON.scores = {}; ON.players.forEach((p) => { ON.scores[p.id] = 0; });
-  ON.rowIdx = -1; ON.turn = null; ON.xpDone = false;
+  ON.rowIdx = -1; ON.turn = null; ON.xpDone = false; ON.done = [];
   ON.phase = "play"; ON.msg = "";
   hostNextRow();
 }
@@ -1358,6 +1360,7 @@ function phaseMsgFor(pid) {
   const base = {
     t: "phase", phase: t.phase, rowIdx: t.rowIdx, total: ON.rows.length,
     writerId: t.writerId, checkerId: t.checkerId, scores: ON.scores, players: ON.players,
+    done: ON.done, curLabels: row.cols.map((c) => c.label),
   };
   if (t.phase === "write") {
     return pid === t.writerId
@@ -1385,6 +1388,7 @@ function hostVerdict(good) {
   const dC = good === autoGood ? 60 : 0;
   ON.scores[t.writerId] = (ON.scores[t.writerId] || 0) + dW;
   ON.scores[t.checkerId] = (ON.scores[t.checkerId] || 0) + dC;
+  ON.done.push({ title: t.row.title, cols: t.row.cols.map((c) => ({ label: c.label, real: c.real })), good });
   t.q.items.forEach((k) => sched(k, good));
   const b = S.blocks[t.q.block] || (S.blocks[t.q.block] = { hit: 0, total: 0 });
   b.total++; if (good) b.hit++;
@@ -1450,7 +1454,7 @@ function onlineJoin(code, name) {
 }
 function guestGone(why) {
   ON.phase = "hub"; ON.msg = "⚠️ " + why;
-  ON.players = []; ON.local = null; ON.view = "wait"; ON.turn = null;
+  ON.players = []; ON.local = null; ON.view = "wait"; ON.turn = null; ON.done = [];
   destroyOnline();
   openOnlineScreen();
 }
@@ -1469,6 +1473,7 @@ function guestHandle(m) {
   }
   if (m.t === "phase") {
     ON.local = m; ON.view = m.you; ON.phase = "play";
+    if (m.done) ON.done = m.done;
     ON.players = m.players || ON.players; ON.scores = m.scores || ON.scores;
     openOnlineScreen(); return;
   }
@@ -1504,6 +1509,11 @@ function renderOnHub(v) {
       <div class="on-card">
         <h3>➕ Crea una sala</h3>
         <div class="field-row"><label>El teu nom</label><input id="onHostName" maxlength="16" placeholder="Anna" autocomplete="off"></div>
+        <div class="field-row"><label>Tema de la partida</label>
+          <select id="onHubSection">
+            <option value="mix">🎲 Barreja (totes les seccions)</option>
+            ${SECTIONS.map((s) => `<option value="${s.id}">${s.ico} ${esc(s.title)}</option>`).join("")}
+          </select></div>
         <button class="btn btn-primary" id="onCreate">Crear sala 🎟️</button>
       </div>
       <div class="on-card">
@@ -1516,9 +1526,14 @@ function renderOnHub(v) {
     ${ON.msg ? `<p class="on-msg">${esc(ON.msg)}</p>` : ""}
     <p class="on-note">📋 El codi es genera en crear la sala i <b>no es pot repetir</b> (es comprova que no hi sigui i s'eviten els codis recents). Comparteix-lo amb fins a 3 amics més.</p>`;
   const cr = $("onCreate");
-  if (cr) cr.onclick = () => onlineCreate($("onHostName").value);
+  if (cr) cr.onclick = () => onlineCreate($("onHostName").value, null, $("onHubSection") ? $("onHubSection").value : "mix");
   const jn = $("onJoin");
   if (jn) jn.onclick = () => onlineJoin($("onJoinCode").value, $("onJoinName").value);
+}
+function sectionLabel(id) {
+  if (!id || id === "mix") return "🎲 Barreja (totes les seccions)";
+  const sec = SECTIONS.find((x) => x.id === id);
+  return sec ? sec.ico + " " + sec.title : id;
 }
 function renderOnLobby(v) {
   const isHost = ON.host;
@@ -1539,13 +1554,19 @@ function renderOnLobby(v) {
         <button class="btn btn-primary" id="onStart" ${ON.players.length < 2 ? "disabled" : ""}>▶️ Comença (${ON.players.length}/${ONLINE_MAX})</button>
         <p class="on-note">${ON.players.length < 2 ? "Calen com a mínim 2 jugadors." : "Els rols canvien en cada fila: un escriu, el següent revisa amb chuleta."}</p>
       </div>`
-      : `<div class="wait-card">⏳ Esperant que <b>${esc(ON.players[0] ? ON.players[0].name : "el host")}</b> comenci la partida…</div>`}
+      : `<div class="on-topic">🎵 Tema: <b>${esc(sectionLabel(ON.section))}</b><span class="on-note">El 👑 host tria el tema abans de començar.</span></div>
+         <div class="wait-card">⏳ Esperant que <b>${esc(ON.players[0] ? ON.players[0].name : "el host")}</b> comenci la partida…</div>`}
     <button class="btn btn-ghost" id="onLeave">✕ Surt de la sala</button>`;
   const cp = $("onCopy");
   if (cp) cp.onclick = () => {
     try { navigator.clipboard.writeText(ON.code); ON.msg = "📋 Codi copiat!"; } catch (e) { ON.msg = "Copia el codi a mà."; }
     renderOnline();
   };
+  const sel = $("onSection");
+  if (sel) {
+    sel.value = ON.section;
+    sel.onchange = () => { ON.section = sel.value; hostLobby(); };
+  }
   const st = $("onStart");
   if (st) st.onclick = () => onlineStart($("onSection").value);
   const lv = $("onLeave");
@@ -1554,6 +1575,29 @@ function renderOnLobby(v) {
 function scoresBar() {
   return `<div class="on-scores">${ON.players.map((p) =>
     `<span class="on-chip score${p.id === ON.me ? " me" : ""}">${esc(p.name)} <b>${ON.scores[p.id] || 0}</b></span>`).join("")}</div>`;
+}
+/* La taula de la partida: només files JA completades (+ l'actual si toca escriure-hi) */
+function onTableHTML(m, editing) {
+  const labels = m.curLabels || (m.row ? m.row.cols.map((c) => c.label) : []);
+  const done = m.done || [];
+  const head = `<tr><th class="rt-h">Element</th>${labels.map((l) => `<th>${esc(l)}</th>`).join("")}</tr>`;
+  const doneRows = done.map((d) => {
+    const matches = d.cols.length === labels.length && d.cols.every((c, i) => c.label === labels[i]);
+    const cells = d.cols.map((c) => {
+      const cap = matches ? "" : `<span class="cap-lbl">${esc(c.label)}</span>`;
+      const th = matches ? ` data-th="${esc(c.label)}"` : "";
+      return `<td class="ans done"${th}>${cap}<span class="v">${esc(c.real)}</span></td>`;
+    }).join("");
+    const pad = Math.max(0, labels.length - d.cols.length);
+    return `<tr class="done-row"><td class="row-t">${d.good ? "✅" : "❌"} ${esc(d.title)}</td>${cells}${`<td class="ans pad"></td>`.repeat(pad)}</tr>`;
+  }).join("");
+  let nowRow = "";
+  if (editing && m.row) {
+    nowRow = `<tr class="now-row"><td class="row-t">✍️ ${esc(m.row.title)}</td>${m.row.cols.map((c, i) =>
+      `<td class="ans now" data-th="${esc(c.label)}"><input class="on-w" data-i="${i}" placeholder="…" autocomplete="off" aria-label="${esc(c.label)}"></td>`).join("")}</tr>`;
+  }
+  if (!doneRows && !nowRow) return "";
+  return `<div class="on-tablewrap"><table class="on-table"><thead>${head}</thead><tbody>${doneRows}${nowRow}</tbody></table></div>`;
 }
 function renderOnPlay(v) {
   const m = ON.local;
@@ -1564,13 +1608,11 @@ function renderOnPlay(v) {
     body = `
       <div class="qcard on-play">
         <div class="q-kind">✍️ Torn d'escriure la taula</div>
-        <div class="q-prompt">Completa la fila: <b>${esc(m.row.title)}</b></div>
-        <div class="q-body">
-          ${m.row.cols.map((c, i) => `<div class="field-row"><label>${esc(c.label)}</label><input class="on-w" data-i="${i}" autocomplete="off"></div>`).join("")}
-        </div>
+        <div class="q-prompt">Completa a la taula la fila <b>${esc(m.row.title)}</b>:</div>
+        <div class="q-body">${onTableHTML(m, true)}</div>
         <div class="q-actions"><button class="btn btn-primary" id="onPass">Passo-ho al revisor ➜</button></div>
       </div>
-      <p class="on-note">No miris la chuleta! 💪 El text real apareixerà després del veredicte.</p>`;
+      <p class="on-note">La taula <b>només mostra les files ja completades</b> (i la que estàs completant ara); les de pendents s'hi afegeixen a mesura. No miris la chuleta! 💪</p>`;
   } else if (m.you === "check") {
     body = `
       <div class="qcard on-play">
@@ -1609,12 +1651,14 @@ function renderOnPlay(v) {
       </div>`;
   } else {
     const writing = m.phase === "write";
+    const tbl = onTableHTML(m, false);
     body = `
       <div class="wait-card big">
         <div class="wait-ico">${writing ? "✍️" : "🔎"}</div>
         <div>${writing ? `<b>${esc(pname(m.writerId))}</b> està completant la taula…` : `<b>${esc(pname(m.checkerId))}</b> està revisant amb la chuleta…`}</div>
         <div class="wait-dots"><span>●</span><span>●</span><span>●</span></div>
       </div>
+      ${tbl ? `<div class="on-sub">🧮 Taula de la partida — ${m.done.length}/${m.total} completades</div>${tbl}` : ""}
       ${m.you === "wait-writer" ? `<p class="on-note">Ja has escrit la fila — ara et toca esperar el veredicte de ${esc(pname(m.checkerId))}.</p>` : ""}`;
   }
   v.innerHTML = `<div class="on-head small">🌐 Sala ${esc(ON.code)}</div>${scoresBar()}${turnInfo}${body}
@@ -1751,7 +1795,7 @@ const G = {
   onState: () => ({
     phase: ON.phase, code: ON.code, players: ON.players, view: ON.view,
     local: ON.local, scores: ON.scores, msg: ON.msg, host: ON.host, me: ON.me,
-    rows: ON.rows,
+    rows: ON.rows, section: ON.section, done: ON.done,
     turn: ON.turn ? { phase: ON.turn.phase, writerId: ON.turn.writerId, checkerId: ON.turn.checkerId } : null,
   }),
 };

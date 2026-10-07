@@ -21,7 +21,7 @@
   --bleed: clamp(16px, 3vw, 34px);
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
-html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
+html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; color-scheme: dark; }
 body {
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   background:
@@ -863,4 +863,46 @@ table.on-table {
 }
 @media (max-width: 700px) {
   .on-range { grid-template-columns: 1fr; }
+}
+
+/* ============ select nadiu → mateix aspecte que els inputs (amb fletxa pròpia) ============ */
+.field-row select {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  width: 100%;
+  min-height: 46px;
+  font-family: inherit;
+  font-size: 16px;
+  line-height: 1.4;
+  color: var(--txt);
+  background-color: rgba(242, 240, 232, 0.055);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%238ec98a' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 13px center;
+  background-size: 16px 16px;
+  border: 1.5px solid rgba(242, 240, 232, 0.16);
+  border-radius: 12px;
+  padding: 11px 40px 11px 14px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.field-row select:hover { border-color: rgba(142, 201, 138, 0.6); }
+.field-row select:focus {
+  border-color: var(--acc);
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(142, 201, 138, 0.18);
+}
+.field-row select:disabled { opacity: 0.45; cursor: not-allowed; }
+.field-row select option {
+  background: #1a211d;
+  color: var(--txt);
+  padding: 8px 10px;
+}
+.field-row select option:checked {
+  background: rgba(142, 201, 138, 0.22);
+  color: #cdeccd;
+}
+@media (max-width: 700px) {
+  .field-row select { padding: 11px 38px 11px 12px; background-position: right 11px center; }
 }

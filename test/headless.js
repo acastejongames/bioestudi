@@ -383,6 +383,13 @@ function checkNoRepeats(mode) {
   try {
     fakeRegistry.set("bioestudi-ZZZZZZ", { placeholder: true });
     const A = makeClient("A");
+    check(JSON.stringify(A.G.parseRange("", 4)) === "[1,2,3,4]", "rang buit → totes");
+    check(JSON.stringify(A.G.parseRange("1-4", 4)) === "[1,2,3,4]", '"1-4" = de l\'1 a la 4 (rang)');
+    check(JSON.stringify(A.G.parseRange("1,4", 4)) === "[1,4]", '"1,4" = només la 1 i la 4 (llista)');
+    check(JSON.stringify(A.G.parseRange("1-2, 4", 5)) === "[1,2,4]", '"1-2, 4" = rang + llista mixte');
+    check(JSON.stringify(A.G.parseRange("4-2", 4)) === "[2,3,4]", "rang invertit es normalitza");
+    check(JSON.stringify(A.G.parseRange("9,2", 4)) === "[2]", "número fora de rang s'ignora");
+    check(JSON.stringify(A.G.parseRange("hola", 3)) === "[1,2,3]", "res vàlid → totes per defecte");
     A.G.onlineCreate("Anna", "ZZZZZZ", "minerals");
     await fakeUntil(() => A.G.onState().phase === "lobby");
     const code = A.G.onState().code;
@@ -390,6 +397,7 @@ function checkNoRepeats(mode) {
     check(A.G.onState().host && A.G.onState().players.length === 1, "host dins la lobby amb el seu nom");
     check(A.doc.body.dataset.screen === "online", "body[data-screen]=online");
     check(A.doc.getElementById("onSection") && A.doc.getElementById("onSection").value === "minerals", "tema triat en crear (Sals minerals) es manté a la lobby");
+    check(!!A.doc.getElementById("onRowSel") && !!A.doc.getElementById("onColSel") && A.doc.getElementById("onRowSel") !== A.doc.getElementById("onColSel"), "host amb DOS camps separats: files i columnes");
 
     const F = makeClient("F");
     F.G.onlineJoin("QQQQQQ", "Fred");
@@ -401,6 +409,7 @@ function checkNoRepeats(mode) {
     await fakeUntil(() => B.G.onState().phase === "lobby" && A.G.onState().players.length === 2);
     check(!B.G.onState().host && B.G.onState().code === code, "B entra a la sala amb el codi (guest)");
     check(B.doc.getElementById("onView").textContent.includes("Sals minerals"), "el guest ve el tema de la sala");
+    check(!B.doc.getElementById("onRowSel"), "els camps de rang els tria només el host");
     const selA = A.doc.getElementById("onSection");
     selA.value = "organitzacio";
     selA.dispatchEvent(new A.win.Event("change"));
@@ -502,9 +511,32 @@ function checkNoRepeats(mode) {
     A.G.onlineCreate("Anna");
     await fakeUntil(() => A.G.onState().phase === "lobby");
     check(A.G.onState().code !== code, `nou codi diferent del precedent (${code} → ${A.G.onState().code})`);
+    check(!A.doc.getElementById("onRowSel") && A.doc.getElementById("onView").textContent.includes("no es poden triar files ni columnes"), "amb Barreja s'oculta la selecció de files/columnes");
     A.G.leaveOnline();
 
-    const onlineErrs = [...A.errs, ...B.errs, ...C.errs, ...D.errs, ...E.errs, ...F.errs];
+    // --- rangs aplicats a una partida real (files 2-3 · columnes 1,3) ---
+    const H = makeClient("H");
+    H.G.onlineCreate("Heura", null, "minerals");
+    await fakeUntil(() => H.G.onState().phase === "lobby");
+    H.doc.getElementById("onRowSel").value = "2-3";
+    H.doc.getElementById("onColSel").value = "1,3";
+    H.doc.getElementById("onRowSel").dispatchEvent(new H.win.Event("input"));
+    H.doc.getElementById("onColSel").dispatchEvent(new H.win.Event("input"));
+    B.G.onlineJoin(H.G.onState().code, "B2");
+    await fakeUntil(() => H.G.onState().players.length === 2 && B.G.onState().phase === "lobby");
+    H.G.onlineStart("minerals");
+    await fakeUntil(() => H.G.onState().view === "write");
+    const rr = H.G.onState().rows;
+    check(rr.length === 2, `files "2-3" → ${rr.length}/6 files de la taula`);
+    check(rr.length > 0 && rr.every((r) => r.row.cols.length === 2), `columnes "1,3" → ${rr.length ? rr[0].row.cols.length : 0} columnes per fila`);
+    check(rr.length > 0 && rr[0].row.cols.map((c) => c.label).join("|") === "Funció clau|2 fonts clau", "columnes separades: només la 1 i la 3 (la 2 fora)");
+    H.G.openSection("minerals");
+    const sheetT = [...H.doc.querySelectorAll("#secSheet tbody tr")].map((tr) => tr.firstElementChild.textContent.trim());
+    check(rr[0].row.title === sheetT[1] && rr[1].row.title === sheetT[2], `files 2-3 = "${rr[0].row.title}" i "${rr[1].row.title}", igual que a la taula`);
+    H.G.leaveOnline();
+    B.G.leaveOnline();
+
+    const onlineErrs = [...A.errs, ...B.errs, ...C.errs, ...D.errs, ...E.errs, ...F.errs, ...H.errs];
     check(onlineErrs.length === 0, "sense errors JS als clients online" + (onlineErrs.length ? ": " + onlineErrs.join(" | ") : ""));
   } catch (e) {
     const diag = {};

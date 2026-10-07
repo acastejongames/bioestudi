@@ -819,3 +819,48 @@ table.on-table {
   }
   .on-table td.ans.done:has(.cap-lbl)::before { content: none; }
 }
+
+/* ============ 🌐 ONLINE — rangs de files/columnes (estil impressió) ============ */
+.on-range {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 14px;
+  margin: 4px 0 12px;
+  padding: 13px 14px;
+  background: rgba(242, 240, 232, 0.035);
+  border: 1px dashed var(--card-brd);
+  border-radius: 13px;
+}
+.on-range .field-row label { color: var(--acc); }
+.on-range .field-row input { font-size: 16px; }
+.on-range .range-tip {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding-top: 2px;
+  border-top: 1px dashed rgba(242, 240, 232, 0.12);
+}
+.on-range .range-tip b { color: var(--gold); font-family: ui-monospace, "SFMono-Regular", Consolas, monospace; letter-spacing: 0.05em; }
+.on-range-list {
+  grid-column: 1 / -1;
+  font-size: 12px;
+  color: var(--mut);
+  line-height: 1.7;
+}
+.on-range-list b { color: var(--acc); font-weight: 800; }
+.rl-tag {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--acc);
+  background: rgba(142, 201, 138, 0.1);
+  border: 1px solid rgba(142, 201, 138, 0.3);
+  padding: 1px 8px;
+  border-radius: 999px;
+  margin-right: 6px;
+  vertical-align: 1px;
+}
+@media (max-width: 700px) {
+  .on-range { grid-template-columns: 1fr; }
+}

@@ -57,6 +57,7 @@ La targeta **Online · sala amb codi** obre una sala multijugador **en línia** 
 
 - **Codis de sala de 6 caràcters** generats criptogràficament; abans d'usar-lo es comprova que no existeixi i s'eviten els codis recents de la sessió → **el codi no es pot repetir**.
 - **Tema triable**: en crear la sala (i editable a la lobby abans de començar) s'escull el tema — 🧬 Nivells d'organització, 🧂 Sals minerals, 💊/☀️ Vitamines, 🌾 Nutrients o 🎲 barreja — i tota la sala el ve.
+- **Files i columnes per separat (estil impressió)**: el host pot restringir què es respon amb dos camps independents — `1-4` = de l'1 a la 4 (rang), `1,4` = només la 1 i la 4 (llista), `1-2,4` combinat; buit o res vàlid = totes. Els números corresponen a les files i columnes de la taula de la secció (es mostra la llegenda numerada a la lobby; amb 🎲 Barreja s'oculta, perquè no hi ha una única taula).
 - **Fins a 4 jugadors**: tothom entra amb el mateix codi (màxim 4; el 5è rep «Sala plena»).
 - En cada fila els rols giren: un **escriu dins la taula** — la mateixa taula de la secció, que **només mostra les files ja completades** (amb el text real i ✅/❌) i la fila actual en curs; el següent **revisa amb la chuleta** (el text real al costat) i decideix 👌 bona / ❌ fallada.
 - Després del veredicte — **bo o dolent** — es revela el **text real** al costat del que s'havia escrit, amb el % de cobertura, per a tots els jugadors.
@@ -78,4 +79,4 @@ Fonts de desplegament: branca `arena/062a1875-bioestudi` → arrel (`/`).
 node test/headless.js   # requereix jsdom (npm i jsdom)
 ```
 
-Recorre tots els modes i seccions, comprova puntuació, estrelles ⭐, repàs espaiat, taules de secció, filtratge de preguntes per secció, **absència de preguntes repetides dins de cada partida**, l'estructura mòbil (`data-th`, `data-screen`, `.game-top`), la interacció real amb la UI i **tot el flux multijugador en línia** (codis únis, sala de 4, tema triable, taula viva anti-spoiler, chuleta, revelació i puntuació) amb un PeerJS simulat multiclient (**174 comprovacions**).
+Recorre tots els modes i seccions, comprova puntuació, estrelles ⭐, repàs espaiat, taules de secció, filtratge de preguntes per secció, **absència de preguntes repetides dins de cada partida**, l'estructura mòbil (`data-th`, `data-screen`, `.game-top`), la interacció real amb la UI i **tot el flux multijugador en línia** (codis únis, sala de 4, tema triable, rangs de files/columnes, taula viva anti-spoiler, chuleta, revelació i puntuació) amb un PeerJS simulat multiclient (**188 comprovacions**).

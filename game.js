@@ -1113,7 +1113,7 @@ const ONLINE_MAX = 4;
 const CODE_ALPHA = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const ON = {
   phase: "hub", code: "", host: false, me: "", name: "",
-  players: [], section: "mix", scores: {}, done: [],
+  players: [], section: "mix", scores: {}, done: [], rowSel: "", colSel: "",
   peer: null, conns: {}, conn: null,
   rows: [], rowIdx: -1, turn: null,
   local: null, view: "wait", msg: "", xpDone: false,
@@ -1171,6 +1171,27 @@ function covMeta(row, typed) {
 }
 function covBadge(c) { return c >= 0.67 ? "✅" : c >= 0.34 ? "🔸" : "❌"; }
 
+/* --- rangs estil impressió: "1-4" → 1,2,3,4 (rang) · "1,4" → 1,4 (llista) · buit/res vàlid → totes --- */
+function parseRange(str, max) {
+  const out = new Set();
+  const parts = String(str == null ? "" : str).split(",");
+  for (const raw of parts) {
+    const part = raw.trim();
+    if (!part) continue;
+    const m = part.match(/^(\d+)\s*-\s*(\d+)$/);
+    if (m) {
+      let a = parseInt(m[1], 10), b = parseInt(m[2], 10);
+      if (a > b) { const t = a; a = b; b = t; }
+      for (let i = a; i <= b; i++) if (i >= 1 && i <= max) out.add(i);
+    } else if (/^\d+$/.test(part)) {
+      const n = parseInt(part, 10);
+      if (n >= 1 && n <= max) out.add(n);
+    }
+  }
+  if (!out.size) { for (let i = 1; i <= max; i++) out.add(i); }
+  return [...out].sort((a, b) => a - b);
+}
+
 /* --- files de la taula per secció (el que s'ha d'escriure) --- */
 function rowsForSection(sec) {
   if (sec === "organitzacio") {
@@ -1194,7 +1215,23 @@ function rowsForSection(sec) {
   return [];
 }
 function buildOnlineRows(section) {
-  if (section && section !== "mix") return rowsForSection(section);
+  if (section && section !== "mix") {
+    let rows = rowsForSection(section);
+    const rsel = parseRange(ON.rowSel, rows.length);
+    if (rsel.length < rows.length) rows = rows.filter((_, i) => rsel.indexOf(i + 1) >= 0);
+    if (!rows.length) rows = rowsForSection(section);
+    const cmax = rows.length ? rows[0].row.cols.length : 0;
+    if (cmax) {
+      const csel = parseRange(ON.colSel, cmax);
+      if (csel.length < cmax) {
+        rows = rows.map((r) => ({
+          ...r,
+          row: { ...r.row, cols: r.row.cols.filter((c, i) => csel.indexOf(i + 1) >= 0) },
+        }));
+      }
+    }
+    return rows;
+  }
   const pickN = (sec, n) => shuffle(rowsForSection(sec)).slice(0, n);
   return [
     ...pickN("minerals", 2), ...pickN("hidro", 2), ...pickN("lipo", 1),
@@ -1215,7 +1252,7 @@ function leaveOnline() {
   destroyOnline();
   ON.code = ""; ON.msg = ""; ON.players = []; ON.scores = {};
   ON.local = null; ON.view = "wait"; ON.turn = null; ON.xpDone = false;
-  ON.done = []; ON.section = "mix";
+  ON.done = []; ON.section = "mix"; ON.rowSel = ""; ON.colSel = "";
   show("home"); renderHome();
 }
 function openOnline() {
@@ -1239,7 +1276,7 @@ function grantOnlineXp() {
 function onlineCreate(name, forceCode, section) {
   destroyOnline();
   ON.host = true; ON.name = (name || "").trim().slice(0, 16) || "Jugador 1";
-  ON.section = section || "mix"; ON.done = [];
+  ON.section = section || "mix"; ON.done = []; ON.rowSel = ""; ON.colSel = "";
   ON.phase = "hub"; ON.msg = "Connectant…"; ON.xpDone = false;
   openOnlineScreen();
   tryCreate(0, forceCode);
@@ -1335,6 +1372,11 @@ function hostHandle(m, conn, remote) {
 function onlineStart(section) {
   if (!ON.host || ON.phase !== "lobby" || ON.players.length < 2) return;
   ON.section = section || "mix";
+  if (ON.section === "mix") { ON.rowSel = ""; ON.colSel = ""; }
+  else {
+    if ($("onRowSel")) ON.rowSel = $("onRowSel").value;
+    if ($("onColSel")) ON.colSel = $("onColSel").value;
+  }
   ON.rows = buildOnlineRows(ON.section);
   ON.scores = {}; ON.players.forEach((p) => { ON.scores[p.id] = 0; });
   ON.rowIdx = -1; ON.turn = null; ON.xpDone = false; ON.done = [];
@@ -1548,6 +1590,26 @@ function sectionLabel(id) {
   const sec = SECTIONS.find((x) => x.id === id);
   return sec ? sec.ico + " " + sec.title : id;
 }
+/* Selecció de files i columnes per separat, amb sintaxi d'impressió */
+function rangeBlockHTML() {
+  if (ON.section === "mix") {
+    return `<p class="on-note">🎲 Amb <b>Barreja</b> no es poden triar files ni columnes: tria un tema concret.</p>`;
+  }
+  const rows = rowsForSection(ON.section);
+  const cols = rows.length ? rows[0].row.cols.map((c) => c.label) : [];
+  const rowPrev = rows.map((r, i) => `<b>${i + 1}</b> ${esc(r.row.title)}`).join(" &nbsp;·&nbsp; ");
+  const colPrev = cols.map((c, i) => `<b>${i + 1}</b> ${esc(c)}`).join(" &nbsp;·&nbsp; ");
+  return `
+    <div class="on-range">
+      <div class="field-row"><label>Files de la taula</label>
+        <input id="onRowSel" value="${esc(ON.rowSel)}" placeholder="1-4 · 1,3 · buit = totes" autocomplete="off"></div>
+      <div class="field-row"><label>Columnes</label>
+        <input id="onColSel" value="${esc(ON.colSel)}" placeholder="1-2 · 1,3 · buit = totes" autocomplete="off"></div>
+      <p class="on-note range-tip">Estil impressió, cadascuna per separat: <b>1-4</b> = de la 1 a la 4 (rang) · <b>1,4</b> = només la 1 i la 4 (llista).</p>
+      <div class="on-range-list"><span class="rl-tag">Files</span> ${rowPrev}</div>
+      <div class="on-range-list"><span class="rl-tag">Columnes</span> ${colPrev}</div>
+    </div>`;
+}
 function renderOnLobby(v) {
   const isHost = ON.host;
   v.innerHTML = `
@@ -1564,6 +1626,7 @@ function renderOnLobby(v) {
             <option value="mix">🎲 Barreja (totes les seccions)</option>
             ${SECTIONS.map((s) => `<option value="${s.id}">${s.ico} ${esc(s.title)}</option>`).join("")}
           </select></div>
+        ${rangeBlockHTML()}
         <button class="btn btn-primary" id="onStart" ${ON.players.length < 2 ? "disabled" : ""}>▶️ Comença (${ON.players.length}/${ONLINE_MAX})</button>
         <p class="on-note">${ON.players.length < 2 ? "Calen com a mínim 2 jugadors." : "Els rols canvien en cada fila: un escriu, el següent revisa amb chuleta."}</p>
       </div>`
@@ -1580,6 +1643,10 @@ function renderOnLobby(v) {
     sel.value = ON.section;
     sel.onchange = () => { ON.section = sel.value; hostLobby(); };
   }
+  const rs = $("onRowSel");
+  if (rs) rs.oninput = () => { ON.rowSel = rs.value; };
+  const cs = $("onColSel");
+  if (cs) cs.oninput = () => { ON.colSel = cs.value; };
   const st = $("onStart");
   if (st) st.onclick = () => onlineStart($("onSection").value);
   const lv = $("onLeave");
@@ -1804,6 +1871,7 @@ const G = {
   dueKeys, starKeys, S: () => S,
   confetti: (n) => confetti(n),
   openOnline, onlineCreate, onlineJoin, onlineStart, leaveOnline, onPass, onVerdict,
+  parseRange,
   onHostNext: () => hostNextRow(),
   onState: () => ({
     phase: ON.phase, code: ON.code, players: ON.players, view: ON.view,

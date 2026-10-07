@@ -966,7 +966,7 @@ function finish() {
 
 /* ============ navegació / home ============ */
 function show(which) {
-  ["home", "game", "result", "section", "online"].forEach((s) => { $("screen-" + s).hidden = s !== which; });
+  ["home", "game", "result", "section", "online", "solo"].forEach((s) => { $("screen-" + s).hidden = s !== which; });
   document.body.dataset.screen = which;
   if (which !== "game") clearTimers();
   window.scrollTo({ top: 0, behavior: "smooth" });
@@ -1231,15 +1231,16 @@ function canonicalOrder(rows) {
   full.forEach((r, i) => { pos[r.id] = i; });
   return rows.slice().sort((a, b) => (Number(pos[a.id]) || 0) - (Number(pos[b.id]) || 0));
 }
-function buildOnlineRows(section) {
+function buildRowsFor(section, sel) {
+  const rowSel = sel.rowSel, colSel = sel.colSel, order = sel.order;
   if (section && section !== "mix") {
     let rows = rowsForSection(section);
-    const rsel = parseRange(ON.rowSel, rows.length);
+    const rsel = parseRange(rowSel, rows.length);
     if (rsel.length < rows.length) rows = rows.filter((_, i) => rsel.indexOf(i + 1) >= 0);
     if (!rows.length) rows = rowsForSection(section);
     const cmax = rows.length ? rows[0].row.cols.length : 0;
     if (cmax) {
-      const csel = parseRange(ON.colSel, cmax);
+      const csel = parseRange(colSel, cmax);
       if (csel.length < cmax) {
         rows = rows.map((r) => ({
           ...r,
@@ -1247,14 +1248,17 @@ function buildOnlineRows(section) {
         }));
       }
     }
-    return ON.order === "random" ? shuffle(rows) : rows;
+    return order === "random" ? shuffle(rows) : rows;
   }
   const pickN = (sec, n) => shuffle(rowsForSection(sec)).slice(0, n);
   const mixed = [
     ...pickN("minerals", 2), ...pickN("hidro", 2), ...pickN("lipo", 1),
     ...pickN("nutrients", 2), ...pickN("organitzacio", 1),
   ];
-  return ON.order === "random" ? shuffle(mixed) : canonicalOrder(mixed);
+  return order === "random" ? shuffle(mixed) : canonicalOrder(mixed);
+}
+function buildOnlineRows(section) {
+  return buildRowsFor(section, { rowSel: ON.rowSel, colSel: ON.colSel, order: ON.order });
 }
 
 /* ---------- estat compartit ---------- */
@@ -1675,20 +1679,21 @@ function sectionLabel(id) {
   return sec ? sec.ico + " " + sec.title : id;
 }
 /* Selecció de files i columnes per separat, amb sintaxi d'impressió */
-function rangeBlockHTML() {
-  if (ON.section === "mix") {
+function rangeBlockHTML(sec, pre, rowSel, colSel) {
+  pre = pre || "on";
+  if (sec === "mix") {
     return `<p class="on-note">🎲 Amb <b>Barreja</b> no es poden triar files ni columnes: tria un tema concret.</p>`;
   }
-  const rows = rowsForSection(ON.section);
+  const rows = rowsForSection(sec);
   const cols = rows.length ? rows[0].row.cols.map((c) => c.label) : [];
   const rowPrev = rows.map((r, i) => `<b>${i + 1}</b> ${esc(r.row.title)}`).join(" &nbsp;·&nbsp; ");
   const colPrev = cols.map((c, i) => `<b>${i + 1}</b> ${esc(c)}`).join(" &nbsp;·&nbsp; ");
   return `
     <div class="on-range">
       <div class="field-row"><label>Files de la taula</label>
-        <input id="onRowSel" value="${esc(ON.rowSel)}" placeholder="1-4 · 1,3 · buit = totes" autocomplete="off"></div>
+        <input id="${pre}RowSel" value="${esc(rowSel || "")}" placeholder="1-4 · 1,3 · buit = totes" autocomplete="off"></div>
       <div class="field-row"><label>Columnes</label>
-        <input id="onColSel" value="${esc(ON.colSel)}" placeholder="1-2 · 1,3 · buit = totes" autocomplete="off"></div>
+        <input id="${pre}ColSel" value="${esc(colSel || "")}" placeholder="1-2 · 1,3 · buit = totes" autocomplete="off"></div>
       <p class="on-note range-tip">Estil impressió, cadascuna per separat: <b>1-4</b> = de la 1 a la 4 (rang) · <b>1,4</b> = només la 1 i la 4 (llista).</p>
       <div class="on-range-list"><span class="rl-tag">Files</span> ${rowPrev}</div>
       <div class="on-range-list"><span class="rl-tag">Columnes</span> ${colPrev}</div>
@@ -1715,7 +1720,7 @@ function renderOnLobby(v) {
             <option value="taula">📖 Com a la taula (B1 → B2 → B5)</option>
             <option value="random">🎲 Aleatori (B6 → B1 → B9 → B12)</option>
           </select></div>
-        ${rangeBlockHTML()}
+        ${rangeBlockHTML(ON.section, "on", ON.rowSel, ON.colSel)}
         <button class="btn btn-primary" id="onStart" ${ON.players.length < 2 ? "disabled" : ""}>▶️ Comença (${ON.players.length}/${ONLINE_MAX})</button>
         <p class="on-note">${ON.players.length < 2 ? "Calen com a mínim 2 jugadors." : "Els rols canvien en cada fila: un escriu, el següent revisa amb chuleta."}</p>
       </div>`
@@ -1884,6 +1889,221 @@ function renderOnOver(v) {
   const hm = $("onHome"); if (hm) hm.onclick = () => leaveOnline();
 }
 
+/* ============ 🧍 EN SOLITARI — omple la taula i et revises tu mateix ============ */
+/* Mateix flux que l'online (escriure → chuleta → veredicte → revelació) però d'un
+   sol jugador: ell s'autoavalua. La sinceritat és l'única pista del aprenentatge. */
+const SO = {
+  active: false, phase: "setup", section: "mix", rowSel: "", colSel: "", order: "taula",
+  rows: [], rowIdx: -1, typed: [], done: [], score: 0, honest: 0,
+  msg: "", reveal: null, xpDone: false, overShown: false,
+};
+function openSolo() {
+  if (ON.code || ON.phase !== "hub") leaveOnline();
+  SO.msg = "";
+  show("solo");
+  renderSolo();
+}
+function soloQuit() {
+  SO.active = false; SO.phase = "setup"; SO.msg = "";
+  show("home"); renderHome();
+}
+function renderSolo() {
+  const v = $("soView");
+  if (!v) return;
+  if (SO.phase === "write") return renderSoloWrite(v);
+  if (SO.phase === "check") return renderSoloCheck(v);
+  if (SO.phase === "reveal") return renderSoloReveal(v);
+  if (SO.phase === "over") return renderSoloOver(v);
+  renderSoloSetup(v);
+}
+function renderSoloSetup(v) {
+  v.innerHTML = `
+    <div class="on-head">🧍 En solitari · omple i autorevisa</div>
+    <div class="qcard on-play">
+      <div class="q-kind">✍️ La teva taula, el teu veredicte</div>
+      <div class="q-prompt">Omple la taula fila a fila i després <b>et revises tu mateix</b> amb la chuleta. Aquí només comptarà la teva <b>sinceritat</b>: si et passes per bona una fallada, no aprendràs res.🎯</div>
+      <div class="q-body">
+        <div class="field-row"><label>Tema de la taula</label>
+          <select id="soSection">
+            <option value="mix">🎲 Barreja (totes les seccions)</option>
+            ${SECTIONS.map((s) => `<option value="${s.id}">${s.ico} ${esc(s.title)}</option>`).join("")}
+          </select></div>
+        <div class="field-row"><label>Ordre d'aparició</label>
+          <select id="soOrder">
+            <option value="taula">📖 Com a la taula (B1 → B2 → B5)</option>
+            <option value="random">🎲 Aleatori (B6 → B1 → B9 → B12)</option>
+          </select></div>
+        ${rangeBlockHTML(SO.section, "so", SO.rowSel, SO.colSel)}
+        ${SO.msg ? `<p class="on-note warn">⚠️ ${esc(SO.msg)}</p>` : ""}
+      </div>
+      <div class="q-actions"><button class="btn btn-primary" id="soStart">▶️ Comença</button></div>
+    </div>
+    <div class="on-foot"><button class="btn btn-ghost" id="soHome">🏠 Menú</button></div>`;
+  const ss = $("soSection");
+  ss.value = SO.section;
+  ss.onchange = () => { SO.section = ss.value; SO.msg = ""; renderSolo(); };
+  const so = $("soOrder");
+  so.value = SO.order;
+  so.onchange = () => { SO.order = so.value; };
+  const rs = $("soRowSel");
+  if (rs) { rs.value = SO.rowSel; rs.oninput = () => { SO.rowSel = rs.value; }; }
+  const cs = $("soColSel");
+  if (cs) { cs.value = SO.colSel; cs.oninput = () => { SO.colSel = cs.value; }; }
+  $("soStart").onclick = soloStart;
+  $("soHome").onclick = soloQuit;
+}
+function soloStart() {
+  if ($("soSection")) SO.section = $("soSection").value;
+  if ($("soOrder")) SO.order = $("soOrder").value || "taula";
+  if (SO.section === "mix") { SO.rowSel = ""; SO.colSel = ""; }
+  else {
+    if ($("soRowSel")) SO.rowSel = $("soRowSel").value;
+    if ($("soColSel")) SO.colSel = $("soColSel").value;
+  }
+  SO.rows = buildRowsFor(SO.section, { rowSel: SO.rowSel, colSel: SO.colSel, order: SO.order });
+  if (!SO.rows.length) { SO.msg = "Cap fila amb aquests filtres: prova un altre rang."; renderSolo(); return; }
+  SO.msg = ""; SO.done = []; SO.typed = []; SO.score = 0; SO.honest = 0;
+  SO.reveal = null; SO.xpDone = false; SO.overShown = false; SO.active = true;
+  SO.rowIdx = -1;
+  soloNext();
+}
+function soloNext() {
+  SO.rowIdx++;
+  if (SO.rowIdx >= SO.rows.length) { SO.phase = "over"; renderSolo(); return; }
+  SO.typed = []; SO.reveal = null; SO.phase = "write";
+  renderSolo();
+}
+function renderSoloWrite(v) {
+  const q = SO.rows[SO.rowIdx];
+  const m = { done: SO.done, row: q.row, curLabels: q.row.cols.map((c) => c.label) };
+  v.innerHTML = `
+    <div class="on-head small">🧍 En solitari · fila <b>${SO.rowIdx + 1}/${SO.rows.length}</b></div>
+    <div class="on-scores"><span class="on-chip score">🧍 Punts <b>${SO.score}</b></span></div>
+    <div class="on-turn">✍️ Escrigues tu · 🔎 Després t'autorevises</div>
+    <div class="qcard on-play">
+      <div class="q-kind">✍️ Torn d'escriure la taula</div>
+      <div class="q-prompt">Completa a la taula la fila <b>${esc(q.row.title)}</b>:</div>
+      <div class="q-body">${onTableHTML(m, true)}</div>
+      <div class="q-actions"><button class="btn btn-primary" id="soPass">Ja l'he escrita → autorevisa ➜</button></div>
+    </div>
+    <p class="on-note">La taula <b>només mostra les files ja completades</b> (i la que estàs completant ara). Encara no miris res! 💪</p>
+    <div class="on-foot"><button class="btn btn-ghost" id="soLeave">✕ Surt</button></div>`;
+  $("soPass").onclick = soloPass;
+  const lv = $("soLeave"); if (lv) lv.onclick = soloQuit;
+}
+function soloPass() {
+  const v = $("soView");
+  const vals = [...v.querySelectorAll(".on-w")].map((i) => i.value);
+  if (vals.every((x) => !x.trim())) { soloHint(); return; }
+  SO.typed = vals;
+  SO.phase = "check";
+  renderSolo();
+}
+function soloHint() {
+  const v = $("soView");
+  const a = v.querySelector(".on-note.warn");
+  if (a) a.remove();
+  const p = document.createElement("p");
+  p.className = "on-note warn";
+  p.textContent = "Escriu alguna cosa abans de revisar 🙂";
+  const card = v.querySelector(".on-play");
+  if (card) card.after(p);
+}
+function renderSoloCheck(v) {
+  const q = SO.rows[SO.rowIdx];
+  v.innerHTML = `
+    <div class="on-head small">🧍 Autorevisió · fila <b>${SO.rowIdx + 1}/${SO.rows.length}</b></div>
+    <div class="on-scores"><span class="on-chip score">🧍 Punts <b>${SO.score}</b></span></div>
+    <div class="qcard on-play">
+      <div class="q-kind">🔎 Torn de revisar — ets tu 🪞</div>
+      <div class="q-prompt">Compara el que has escrit amb la chuleta i <b>sigues sincer</b>: el teu veredicte és el que farà que aprenguis (o no). 🎯 <b>${esc(q.row.title)}</b></div>
+      <div class="q-body">
+        ${q.row.cols.map((c, i) => `
+          <div class="duo-cmp"><div class="cmp-line"><span class="lbl">Hi has dit</span><div class="typed">${esc(SO.typed[i] || "—")}</div></div></div>`).join("")}
+        <div class="chuleta">📝 <b>CHULETA</b> (el text real — el teu full de trucada)
+          ${q.row.cols.map((c) => `<div class="ch-row"><span class="ch-lbl">${esc(c.label)}</span> ${esc(c.real)}</div>`).join("")}
+        </div>
+      </div>
+      <div class="q-actions">
+        <button class="btn btn-ok" id="soGood">👌 Ho dono per bona</button>
+        <button class="btn btn-no" id="soBad">❌ És una fallada</button>
+      </div>
+    </div>
+    <div class="on-foot"><button class="btn btn-ghost" id="soLeave">✕ Surt</button></div>`;
+  $("soGood").onclick = () => soloVerdict(true);
+  $("soBad").onclick = () => soloVerdict(false);
+  const lv = $("soLeave"); if (lv) lv.onclick = soloQuit;
+}
+function soloVerdict(good) {
+  if (SO.phase !== "check") return;
+  const q = SO.rows[SO.rowIdx];
+  const meta = covMeta(q.row, SO.typed);
+  const autoGood = meta.overall >= 0.5;
+  const dW = good ? 100 : 0;
+  const dC = good === autoGood ? 60 : 0;
+  SO.score += dW + dC;
+  if (good === autoGood) SO.honest++;
+  SO.done.push({ title: q.row.title, cols: q.row.cols.map((c) => ({ label: c.label, real: c.real })), good });
+  q.items.forEach((k) => sched(k, good));
+  const b = S.blocks[q.block] || (S.blocks[q.block] = { hit: 0, total: 0 });
+  b.total++; if (good) b.hit++;
+  save();
+  SO.reveal = { row: q.row, typed: SO.typed.slice(), good, autoGood, cov: meta.cols, overall: meta.overall, deltaW: dW, deltaC: dC };
+  SO.phase = "reveal";
+  renderSolo();
+}
+function renderSoloReveal(v) {
+  const r = SO.reveal;
+  const last = SO.rowIdx + 1 >= SO.rows.length;
+  v.innerHTML = `
+    <div class="on-head small">🧍 Revelació · fila <b>${SO.rowIdx + 1}/${SO.rows.length}</b></div>
+    <div class="on-scores"><span class="on-chip score">🧍 Punts <b>${SO.score}</b></span></div>
+    <div class="qcard on-play">
+      <div class="q-kind">🔍 Revelació</div>
+      <div class="q-prompt ${r.good ? "ok-t" : "bad-t"}">${r.good ? "✅ Donada per bona" : "❌ Fallada"} — <b>${esc(r.row.title)}</b>${r.good === r.autoGood ? "" : " · ⚠️ el veredicte no coincideix amb l'estimació automàtica"}</div>
+      <div class="q-body">
+        ${r.row.cols.map((c, i) => `
+          <div class="duo-cmp">
+            <div class="cmp-line"><span class="lbl">Hi has dit</span><div class="typed">${esc(r.typed[i] || "—")}</div></div>
+            <div class="cmp-line real"><span class="lbl">Text real</span><div>${esc(c.real)}</div></div>
+            <span class="on-badge">${covBadge(r.cov[i])} ${Math.round(r.cov[i] * 100)}% del text real</span>
+          </div>`).join("")}
+        <div class="on-deltas">✍️ Omplir <b>${r.deltaW ? "+" + r.deltaW : "+0"}</b> · 🔎 Veredicte <b>${r.deltaC ? "+" + r.deltaC : "+0"}</b></div>
+      </div>
+      <div class="q-actions">
+        <button class="btn btn-primary" id="soNext">${last ? "🏁 Veure resultats" : "Següent fila ➜"}</button>
+      </div>
+    </div>
+    <div class="on-foot"><button class="btn btn-ghost" id="soLeave">✕ Surt</button></div>`;
+  $("soNext").onclick = soloNext;
+  const lv = $("soLeave"); if (lv) lv.onclick = soloQuit;
+}
+function renderSoloOver(v) {
+  const total = SO.rows.length;
+  const xp = Math.round(SO.score / 10);
+  v.innerHTML = `
+    <div class="on-head">🏆 Fi de la partida</div>
+    <div class="wait-card big"><div class="wait-ico">🧍</div>
+      <div>Taula completada: <b>${SO.score}</b> punts en ${total} files!</div></div>
+    <div class="podium">
+      <div class="pod-row me"><span>✍️</span><span class="p-name">Files omplertes</span><b>${total}</b></div>
+      <div class="pod-row"><span>🎯</span><span class="p-name">Veredictes coincidents amb l'estimació</span><b>${SO.honest}/${total}</b></div>
+      <div class="pod-row"><span>✨</span><span class="p-name">XP guanyada</span><b>+${xp}</b></div>
+    </div>
+    <p class="on-note">La sinceritat és l'única pista: si et passes per bona una fallada, el proper cop t'hi tornaràs a trobar.🎯</p>
+    <div class="on-foot">
+      <button class="btn btn-primary" id="soAgain">🔄 Altra partida</button>
+      <button class="btn" id="soHome">🏠 Menú</button>
+    </div>`;
+  if (!SO.xpDone) {
+    SO.xpDone = true;
+    S.xp += xp; touchDay(); save(); renderHud();
+  }
+  if (!SO.overShown) { SO.overShown = true; try { sfx("win"); } catch (e) {} confetti(90); }
+  $("soAgain").onclick = () => { SO.phase = "setup"; SO.msg = ""; SO.overShown = false; renderSolo(); };
+  $("soHome").onclick = soloQuit;
+}
+
 /* ============ clavier ============ */
 document.addEventListener("keydown", (e) => {
   if ($("screen-game").hidden) return;
@@ -1912,6 +2132,7 @@ function init() {
     el.onclick = () => {
       sfx("click");
       if (el.dataset.mode === "online") openOnline();
+      else if (el.dataset.mode === "solo") openSolo();
       else startMode(el.dataset.mode);
     };
   });
@@ -1972,6 +2193,12 @@ const G = {
   dueKeys, starKeys, S: () => S,
   confetti: (n) => confetti(n),
   openOnline, onlineCreate, onlineJoin, onlineStart, leaveOnline, onPass, onVerdict,
+  openSolo,
+  onSolo: () => ({
+    phase: SO.phase, section: SO.section, order: SO.order,
+    rows: SO.rows.length, rowIdx: SO.rowIdx, score: SO.score, honest: SO.honest,
+    done: SO.done.length, msg: SO.msg, xpDone: SO.xpDone, active: SO.active,
+  }),
   parseRange,
   onHostNext: () => hostNextRow(),
   onState: () => ({

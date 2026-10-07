@@ -195,8 +195,9 @@ function checkNoRepeats(mode) {
   console.log("== init ==");
   check(G.dueKeys, "API exposta");
   check(!window.document.getElementById("screen-home").hidden, "home visible en iniciar");
-  check(window.document.querySelectorAll(".mode-card").length === 7, "7 modes a la portada");
+  check(window.document.querySelectorAll(".mode-card").length === 8, "8 modes a la portada");
   check(window.document.querySelector('.mode-card[data-mode="online"]'), "targeta Online · sala amb codi a la portada");
+  check(window.document.querySelector('.mode-card[data-mode="solo"]'), "targeta En solitari · omple i autorevisa a la portada");
   check(window.document.querySelectorAll("#secGrid .sec-card").length === 5, "5 seccions a la portada");
   check(window.document.body.dataset.screen === "home", "body[data-screen]=home en iniciar");
   check(window.document.querySelector("#screen-game .game-top #gProgress"), "HUD + progress dins del contenidor .game-top (per a sticky al mòbil)");
@@ -536,6 +537,57 @@ function checkNoRepeats(mode) {
     H.G.leaveOnline();
     B.G.leaveOnline();
 
+    // --- mode individual: omple la taula i et revises tu mateix ---
+    const Z1 = makeClient("Z1");
+    Z1.doc.querySelector('[data-mode="solo"]').click();
+    check(!Z1.doc.getElementById("screen-solo").hidden && Z1.doc.getElementById("screen-home").hidden && Z1.doc.body.dataset.screen === "solo", "mode individual: s'obre la pantalla «En solitari»");
+    check(!!Z1.doc.getElementById("soSection") && !!Z1.doc.getElementById("soOrder"), "setup individual: tema + ordre d'aparició");
+    check(Z1.doc.getElementById("soOrder").value === "taula", "ordre per defecte: com a la taula");
+    Z1.doc.getElementById("soSection").value = "minerals";
+    Z1.doc.getElementById("soSection").dispatchEvent(new Z1.win.Event("change"));
+    const zRow = Z1.doc.getElementById("soRowSel");
+    check(!!zRow, "rang de files/columnes disponible amb tema concret");
+    zRow.value = "1";
+    zRow.dispatchEvent(new Z1.win.Event("input"));
+    Z1.doc.getElementById("soStart").click();
+    check(Z1.G.onSolo().phase === "write" && Z1.G.onSolo().rows === 1, "comença amb 1 fila i torn d'escriure");
+    check(Z1.doc.querySelectorAll("#soView .on-w").length > 0, "inputs de la taula per omplir");
+    Z1.doc.getElementById("soPass").click();
+    check(Z1.G.onSolo().phase === "write" && !!Z1.doc.querySelector("#soView .on-note.warn"), "buides → avís en lloc d'avançar a la revisió");
+    Z1.doc.querySelectorAll("#soView .on-w")[0].value = "Prova";
+    Z1.doc.getElementById("soPass").click();
+    check(Z1.G.onSolo().phase === "check", "pas a l'autorevisió amb chuleta");
+    let zTxt = Z1.doc.getElementById("soView").textContent;
+    check(zTxt.includes("CHULETA") && zTxt.toLowerCase().includes("sincer"), "chuleta visible + avís de sinceritat");
+    Z1.doc.getElementById("soBad").click();
+    check(Z1.G.onSolo().phase === "reveal", "veredicte → revelació");
+    zTxt = Z1.doc.getElementById("soView").textContent;
+    check(zTxt.includes("Fallada") && !zTxt.includes("⚠️"), "veredicte honest (coincident amb l'estimació): sense avís");
+    check(Z1.G.onSolo().score === 60, `puntuació honesta: 0 omplir + 60 veredicte (${Z1.G.onSolo().score})`);
+    Z1.doc.getElementById("soNext").click();
+    check(Z1.G.onSolo().phase === "over", "fila única → pantalla de resultats");
+    check(Z1.G.onSolo().xpDone === true, "XP concedida en acabar la partida");
+    Z1.doc.getElementById("soHome").click();
+    check(!Z1.doc.getElementById("screen-home").hidden && Z1.doc.body.dataset.screen === "home", "menú → torna a la portada");
+
+    const Z2 = makeClient("Z2");
+    Z2.doc.querySelector('[data-mode="solo"]').click();
+    Z2.doc.getElementById("soSection").value = "minerals";
+    Z2.doc.getElementById("soSection").dispatchEvent(new Z2.win.Event("change"));
+    const zRow2 = Z2.doc.getElementById("soRowSel");
+    zRow2.value = "1";
+    zRow2.dispatchEvent(new Z2.win.Event("input"));
+    Z2.doc.getElementById("soStart").click();
+    Z2.doc.querySelectorAll("#soView .on-w")[0].value = "Prova";
+    Z2.doc.getElementById("soPass").click();
+    Z2.doc.getElementById("soGood").click(); // 👌 malgrat l'estimació diu que no → deshonest
+    check(Z2.G.onSolo().phase === "reveal", "Z2: veredicte → revelació");
+    check(Z2.doc.getElementById("soView").textContent.includes("⚠️"), "avís quan el veredicte NO coincideix amb l'estimació automàtica");
+    check(Z2.G.onSolo().score === 100, `deshonest: +100 omplir i +0 veredicte (${Z2.G.onSolo().score})`);
+    check(Z2.G.onSolo().honest === 0, "comptador de veredictes coincidents = 0");
+    Z2.doc.getElementById("soNext").click();
+    check(Z2.G.onSolo().done === 1 && Z2.G.onSolo().phase === "over", "fila registrada i fi de partida");
+
     // --- kick + ban a la lobby ---
     const K = makeClient("K"), P1 = makeClient("P1"), P2 = makeClient("P2");
     K.G.onlineCreate("Keeper", null, "minerals");
@@ -664,7 +716,7 @@ function checkNoRepeats(mode) {
 
     const onlineErrs = [...A.errs, ...B.errs, ...C.errs, ...D.errs, ...E.errs, ...F.errs, ...H.errs,
       ...K.errs, ...P1.errs, ...P2.errs, ...R2.errs, ...S2.errs, ...M.errs, ...Q1.errs, ...Q2.errs,
-      ...TW.errs, ...U1.errs, ...U2.errs];
+      ...TW.errs, ...U1.errs, ...U2.errs, ...Z1.errs, ...Z2.errs];
     check(onlineErrs.length === 0, "sense errors JS als clients online" + (onlineErrs.length ? ": " + onlineErrs.join(" | ") : ""));
   } catch (e) {
     const diag = {};

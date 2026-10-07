@@ -943,3 +943,4 @@ table.on-table {
 }
 .kick-card [data-kick-act="ban"]:hover { background: rgba(236, 128, 128, 0.2); border-color: var(--bad); }
 .kick-card [data-kick-act="cancel"] { text-align: center; }
+.m8 .mode-ico { background: rgba(111, 195, 181, 0.15); color: #6fc3b5; }

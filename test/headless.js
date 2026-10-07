@@ -536,7 +536,84 @@ function checkNoRepeats(mode) {
     H.G.leaveOnline();
     B.G.leaveOnline();
 
-    const onlineErrs = [...A.errs, ...B.errs, ...C.errs, ...D.errs, ...E.errs, ...F.errs, ...H.errs];
+    // --- kick + ban a la lobby ---
+    const K = makeClient("K"), P1 = makeClient("P1"), P2 = makeClient("P2");
+    K.G.onlineCreate("Keeper", null, "minerals");
+    await fakeUntil(() => K.G.onState().phase === "lobby");
+    check(K.doc.getElementById("onOrder") && K.doc.getElementById("onOrder").value === "taula", "selector d'ordre a la lobby (per defecte: com a la taula)");
+    P1.G.onlineJoin(K.G.onState().code, "Pep");
+    await fakeUntil(() => K.G.onState().players.length === 2);
+    P2.G.onlineJoin(K.G.onState().code, "Pau");
+    await fakeUntil(() => K.G.onState().players.length === 3);
+    const kickBtn = K.doc.querySelector(`[data-kick="${K.G.onState().players[1].id}"]`);
+    check(!!kickBtn, "host ve el botó ✕ als jugadors a la lobby");
+    kickBtn.click();
+    await fakeUntil(() => K.G.onState().players.length === 2);
+    check(true, "kick a la lobby: passen de 3 a 2 jugadors");
+    await fakeUntil(() => P1.G.onState().phase === "hub" && P1.G.onState().msg.includes("expulsat"));
+    check(true, "el jugador expulsat rep l'avís i torna a l'inici");
+    P1.G.onlineJoin(K.G.onState().code, "Pep");
+    await fakeUntil(() => P1.G.onState().phase === "hub" && P1.G.onState().msg.includes("expulsat"));
+    check(P1.G.onState().banned === 0 && K.G.onState().players.length === 2, "BAN: el jugador expulsat no pot tornar a unir-se a la mateixa sala");
+    check(K.G.onState().banned === 1, "el host manté 1 pid banejat");
+    K.G.leaveOnline(); P1.G.leaveOnline(); P2.G.leaveOnline();
+
+    // --- ordre aleatori aplicat a les files ---
+    const R2 = makeClient("R2"), S2 = makeClient("S2");
+    R2.G.onlineCreate("Ordre", null, "hidro");
+    await fakeUntil(() => R2.G.onState().phase === "lobby");
+    const ordSel = R2.doc.getElementById("onOrder");
+    ordSel.value = "random";
+    ordSel.dispatchEvent(new R2.win.Event("change")); // persisteix a l'estat (com el navegador)
+    R2.win.Math.random = () => 0; // shuffle determinista (swap amb 0 → rotació)
+    S2.G.onlineJoin(R2.G.onState().code, "Sofia");
+    await fakeUntil(() => R2.G.onState().players.length === 2 && S2.G.onState().phase === "lobby");
+    R2.G.onlineStart("hidro");
+    await fakeUntil(() => R2.G.onState().view === "write");
+    R2.G.openSection("hidro");
+    const ht = [...R2.doc.querySelectorAll("#secSheet tbody tr")].map((tr) => tr.firstElementChild.textContent.trim());
+    const rr2 = R2.G.onState().rows;
+    check(rr2.length === ht.length, `ordre aleatori: ${rr2.length} files sense filtres`);
+    const expectRot = ht.slice(1).concat(ht.slice(0, 1));
+    check(rr2.map((r) => r.row.title).join("|") === expectRot.join("|"), `ordre ALEATORI aplicat (B1→B2→… esdevé rotació B2→…→B1): ${rr2.slice(0, 3).map((r) => r.row.title).join(", ")}…`);
+    check(R2.G.onState().order === "random", "estat d'ordre = random");
+    R2.G.leaveOnline(); S2.G.leaveOnline();
+
+    // --- kick en plena partida: la partida CONTINUA (sense reiniciar) ---
+    const M = makeClient("M"), Q1 = makeClient("Q1"), Q2 = makeClient("Q2");
+    M.G.onlineCreate("Midia", null, "organitzacio");
+    await fakeUntil(() => M.G.onState().phase === "lobby");
+    Q1.G.onlineJoin(M.G.onState().code, "Quim");
+    await fakeUntil(() => M.G.onState().players.length === 2);
+    Q2.G.onlineJoin(M.G.onState().code, "Qüy");
+    await fakeUntil(() => M.G.onState().players.length === 3);
+    M.G.onlineStart("organitzacio");
+    await fakeUntil(() => M.G.onState().view === "write");
+    const checkerId = M.G.onState().turn.checkerId;
+    const midKick = M.doc.querySelector(`[data-kick="${checkerId}"]`);
+    check(!!midKick, "host pot expulsar en plena partida (xips de puntuació)");
+    midKick.click();
+    await fakeUntil(() => M.G.onState().players.length === 2 && M.G.onState().phase === "play");
+    check(true, "kick en joc: la partida CONTINUA (no es reinicia)");
+    const restants = M.G.onState().players.map((p) => p.id);
+    check(restants.includes(M.G.onState().turn.writerId) && restants.includes(M.G.onState().turn.checkerId), "rols reassignats als jugadors restants");
+    await fakeUntil(() => Q1.G.onState().phase === "hub" && Q1.G.onState().msg.includes("expulsat"));
+    check(true, "l'expulsat en joc rep l'avís");
+    M.doc.querySelector("#onView .on-w").value = "Cèl·lula";
+    M.doc.getElementById("onPass").click();
+    await fakeUntil(() => Q2.G.onState().view === "check");
+    check(Q2.doc.getElementById("onView").textContent.includes("CHULETA"), "el revisor restant rep la chuleta i el joc segueix");
+    Q2.G.onVerdict(false);
+    await fakeUntil(() => M.G.onState().view === "reveal");
+    check(true, "fila completada amb els jugadors restants");
+    const otherId = M.G.onState().players.find((p) => p.id !== M.G.onState().me).id;
+    M.doc.querySelector(`[data-kick="${otherId}"]`).click();
+    await fakeUntil(() => M.G.onState().phase === "hub");
+    check(M.G.onState().msg.includes("sol"), "kick de l'últim company → sala tancada amb avís (sense restart forçat)");
+    M.G.leaveOnline(); Q1.G.leaveOnline(); Q2.G.leaveOnline();
+
+    const onlineErrs = [...A.errs, ...B.errs, ...C.errs, ...D.errs, ...E.errs, ...F.errs, ...H.errs,
+      ...K.errs, ...P1.errs, ...P2.errs, ...R2.errs, ...S2.errs, ...M.errs, ...Q1.errs, ...Q2.errs];
     check(onlineErrs.length === 0, "sense errors JS als clients online" + (onlineErrs.length ? ": " + onlineErrs.join(" | ") : ""));
   } catch (e) {
     const diag = {};

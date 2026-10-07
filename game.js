@@ -1113,7 +1113,8 @@ const ONLINE_MAX = 4;
 const CODE_ALPHA = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const ON = {
   phase: "hub", code: "", host: false, me: "", name: "",
-  players: [], section: "mix", scores: {}, done: [], rowSel: "", colSel: "",
+  players: [], section: "mix", scores: {}, done: [], rowSel: "", colSel: "", order: "taula",
+  pids: {}, banned: new Set(),
   peer: null, conns: {}, conn: null,
   rows: [], rowIdx: -1, turn: null,
   local: null, view: "wait", msg: "", xpDone: false,
@@ -1138,6 +1139,16 @@ function genCode() {
 function rememberCode(code) {
   S.recentCodes = (S.recentCodes || []).concat([code]).slice(-80);
   save();
+}
+function getPid() {
+  try {
+    let pid = localStorage.getItem("bioestudi.pid");
+    if (!pid) {
+      pid = "p" + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
+      localStorage.setItem("bioestudi.pid", pid);
+    }
+    return pid;
+  } catch (e) { return "anon-" + Math.random().toString(36).slice(2, 8); }
 }
 function makePeer(id) {
   if (window.__peerFactory) return window.__peerFactory(id);
@@ -1214,6 +1225,12 @@ function rowsForSection(sec) {
   }
   return [];
 }
+function canonicalOrder(rows) {
+  const full = ["minerals", "hidro", "lipo", "nutrients", "organitzacio"].flatMap((x) => rowsForSection(x));
+  const pos = {};
+  full.forEach((r, i) => { pos[r.id] = i; });
+  return rows.slice().sort((a, b) => (Number(pos[a.id]) || 0) - (Number(pos[b.id]) || 0));
+}
 function buildOnlineRows(section) {
   if (section && section !== "mix") {
     let rows = rowsForSection(section);
@@ -1230,13 +1247,14 @@ function buildOnlineRows(section) {
         }));
       }
     }
-    return rows;
+    return ON.order === "random" ? shuffle(rows) : rows;
   }
   const pickN = (sec, n) => shuffle(rowsForSection(sec)).slice(0, n);
-  return [
+  const mixed = [
     ...pickN("minerals", 2), ...pickN("hidro", 2), ...pickN("lipo", 1),
     ...pickN("nutrients", 2), ...pickN("organitzacio", 1),
   ];
+  return ON.order === "random" ? shuffle(mixed) : canonicalOrder(mixed);
 }
 
 /* ---------- estat compartit ---------- */
@@ -1253,6 +1271,7 @@ function leaveOnline() {
   ON.code = ""; ON.msg = ""; ON.players = []; ON.scores = {};
   ON.local = null; ON.view = "wait"; ON.turn = null; ON.xpDone = false;
   ON.done = []; ON.section = "mix"; ON.rowSel = ""; ON.colSel = "";
+  ON.order = "taula"; ON.pids = {}; ON.banned = new Set();
   show("home"); renderHome();
 }
 function openOnline() {
@@ -1277,6 +1296,7 @@ function onlineCreate(name, forceCode, section) {
   destroyOnline();
   ON.host = true; ON.name = (name || "").trim().slice(0, 16) || "Jugador 1";
   ON.section = section || "mix"; ON.done = []; ON.rowSel = ""; ON.colSel = "";
+  ON.order = "taula"; ON.pids = {}; ON.banned = new Set();
   ON.phase = "hub"; ON.msg = "Connectant…"; ON.xpDone = false;
   openOnlineScreen();
   tryCreate(0, forceCode);
@@ -1343,6 +1363,10 @@ function hostLobby() {
 function hostHandle(m, conn, remote) {
   if (!m || typeof m !== "object") return;
   if (m.t === "join") {
+    if (m.pid && ON.banned.has(m.pid)) {
+      try { conn.send({ t: "reject", why: "⛔ T'han expulsat d'aquesta sala i no hi pots tornar." }); } catch (e) {}
+      return;
+    }
     if (ON.phase !== "lobby") {
       try { conn.send({ t: "reject", why: "La partida ja ha començat." }); } catch (e) {}
       return;
@@ -1352,6 +1376,7 @@ function hostHandle(m, conn, remote) {
       return;
     }
     ON.conns[remote] = conn;
+    if (m.pid) ON.pids[remote] = m.pid;
     ON.players.push({ id: remote, name: String(m.name || "Jugador " + (ON.players.length + 1)).slice(0, 16) });
     ON.scores[remote] = 0;
     try { conn.send({ t: "welcome", you: remote, code: ON.code, players: ON.players, section: ON.section, scores: ON.scores }); } catch (e) {}
@@ -1377,6 +1402,7 @@ function onlineStart(section) {
     if ($("onRowSel")) ON.rowSel = $("onRowSel").value;
     if ($("onColSel")) ON.colSel = $("onColSel").value;
   }
+  if ($("onOrder")) ON.order = $("onOrder").value || "taula";
   ON.rows = buildOnlineRows(ON.section);
   ON.scores = {}; ON.players.forEach((p) => { ON.scores[p.id] = 0; });
   ON.rowIdx = -1; ON.turn = null; ON.xpDone = false; ON.done = [];
@@ -1449,6 +1475,32 @@ function hostVerdict(good) {
   });
   openOnlineScreen();
 }
+function hostKick(id, why) {
+  if (!ON.host || !id || id === ON.me) return;
+  if (!ON.players.some((p) => p.id === id)) return;
+  /* ban estable per pid: no podrà tornar a unir-se a aquesta sala */
+  const pid = ON.pids[id];
+  if (pid) ON.banned.add(pid);
+  try { onSend(id, { t: "kicked", why: why || "El host t'ha expulsat de la sala." }); } catch (e) {}
+  const c = ON.conns[id];
+  delete ON.conns[id];
+  delete ON.pids[id];
+  ON.players = ON.players.filter((p) => p.id !== id);
+  delete ON.scores[id];
+  /* tanca DESPRÉS que el missatge "kicked" s'hagi lliurat */
+  if (c) setTimeout(() => { try { c.close(); } catch (e) {} }, 50);
+  if (ON.phase === "lobby") { hostLobby(); return; }
+  if (ON.phase === "play") {
+    if (ON.players.length <= 1) { hostEnd("T'has quedat sol a la sala; s'ha tancat."); return; }
+    if (ON.turn) {
+      /* reassigna rols de la fila actual als restants (la partida NO es reinicia) */
+      const n = ON.players.length;
+      ON.turn.writerId = ON.players[ON.turn.rowIdx % n].id;
+      ON.turn.checkerId = ON.players[(ON.turn.rowIdx + 1) % n].id;
+    }
+    hostSendPhases();
+  }
+}
 function hostGameOver() {
   ON.phase = "over"; ON.turn = null;
   const msg = { t: "over", scores: ON.scores, players: ON.players };
@@ -1477,7 +1529,7 @@ function onlineJoin(code, name) {
     ON.conn = conn;
     conn.on("open", () => {
       opened = true;
-      try { conn.send({ t: "join", name: ON.name }); } catch (e) {}
+      try { conn.send({ t: "join", name: ON.name, pid: getPid() }); } catch (e) {}
       ON.msg = "Entrant…"; openOnlineScreen();
     });
     conn.on("data", (m) => guestHandle(m));
@@ -1523,6 +1575,7 @@ function guestHandle(m) {
     ON.scores = m.scores; ON.players = m.players; ON.phase = "over";
     grantOnlineXp(); openOnlineScreen(); return;
   }
+  if (m.t === "kicked") { guestGone("⛔ " + (m.why || "El host t'ha expulsat de la sala.")); return; }
   if (m.t === "bye") { guestGone(m.why || "La sala s'ha tancat."); }
 }
 function onPass(vals) {
@@ -1616,7 +1669,7 @@ function renderOnLobby(v) {
     <div class="on-head">🎟️ Sala <b class="on-code">${esc(ON.code)}</b>
       <button class="btn btn-small" id="onCopy">Copia</button></div>
     <div class="on-players">
-      ${ON.players.map((p) => `<span class="on-chip${p.id === ON.me ? " me" : ""}">${p.id === ON.players[0].id ? "👑 " : ""}${esc(p.name)}${p.id === ON.me ? " (tu)" : ""}</span>`).join("")}
+      ${ON.players.map((p) => `<span class="on-chip${p.id === ON.me ? " me" : ""}">${p.id === ON.players[0].id ? "👑 " : ""}${esc(p.name)}${p.id === ON.me ? " (tu)" : ""}${ON.host && p.id !== ON.me ? `<button class="on-x" data-kick="${p.id}" title="Expulsar (ban d'aquesta sala)">✕</button>` : ""}</span>`).join("")}
       ${Array.from({ length: ONLINE_MAX - ON.players.length }, () => `<span class="on-chip empty">+ lliure</span>`).join("")}
     </div>
     ${isHost ? `
@@ -1625,6 +1678,11 @@ function renderOnLobby(v) {
           <select id="onSection">
             <option value="mix">🎲 Barreja (totes les seccions)</option>
             ${SECTIONS.map((s) => `<option value="${s.id}">${s.ico} ${esc(s.title)}</option>`).join("")}
+          </select></div>
+        <div class="field-row"><label>Ordre d'aparició</label>
+          <select id="onOrder">
+            <option value="taula">📖 Com a la taula (B1 → B2 → B5)</option>
+            <option value="random">🎲 Aleatori (B6 → B1 → B9 → B12)</option>
           </select></div>
         ${rangeBlockHTML()}
         <button class="btn btn-primary" id="onStart" ${ON.players.length < 2 ? "disabled" : ""}>▶️ Comença (${ON.players.length}/${ONLINE_MAX})</button>
@@ -1647,6 +1705,12 @@ function renderOnLobby(v) {
   if (rs) rs.oninput = () => { ON.rowSel = rs.value; };
   const cs = $("onColSel");
   if (cs) cs.oninput = () => { ON.colSel = cs.value; };
+  const ord = $("onOrder");
+  if (ord) {
+    ord.value = ON.order;
+    ord.onchange = () => { ON.order = ord.value; };
+  }
+  v.querySelectorAll("[data-kick]").forEach((b) => { b.onclick = () => hostKick(b.dataset.kick); });
   const st = $("onStart");
   if (st) st.onclick = () => onlineStart($("onSection").value);
   const lv = $("onLeave");
@@ -1654,7 +1718,7 @@ function renderOnLobby(v) {
 }
 function scoresBar() {
   return `<div class="on-scores">${ON.players.map((p) =>
-    `<span class="on-chip score${p.id === ON.me ? " me" : ""}">${esc(p.name)} <b>${ON.scores[p.id] || 0}</b></span>`).join("")}</div>`;
+    `<span class="on-chip score${p.id === ON.me ? " me" : ""}">${esc(p.name)} <b>${ON.scores[p.id] || 0}</b>${ON.host && p.id !== ON.me ? `<button class="on-x" data-kick="${p.id}" title="Expulsar (ban d'aquesta sala)">✕</button>` : ""}</span>`).join("")}</div>`;
 }
 /* La taula de la partida: només files JA completades (+ l'actual si toca escriure-hi) */
 function onTableHTML(m, editing) {
@@ -1682,6 +1746,8 @@ function onTableHTML(m, editing) {
 function renderOnPlay(v) {
   const m = ON.local;
   if (!m) { v.innerHTML = `<div class="wait-card">⏳ Connectant amb la partida…</div>`; return; }
+  /* no perdre allò que s'estava escrivint si hi ha un re-render (kick, etc.) */
+  const prevVals = [...v.querySelectorAll(".on-w")].map((i) => i.value);
   const turnInfo = `<div class="on-turn">Fila <b>${m.rowIdx + 1}/${m.total}</b> · ✍️ ${esc(pname(m.writerId))} escriu · 🔎 ${esc(pname(m.checkerId))} revisa</div>`;
   let body = "";
   if (m.you === "write") {
@@ -1743,6 +1809,10 @@ function renderOnPlay(v) {
   }
   v.innerHTML = `<div class="on-head small">🌐 Sala ${esc(ON.code)}</div>${scoresBar()}${turnInfo}${body}
     <div class="on-foot"><button class="btn btn-ghost" id="onLeave">✕ Surt</button></div>`;
+  if (m.you === "write") {
+    [...v.querySelectorAll(".on-w")].forEach((inp, i) => { inp.value = prevVals[i] || ""; });
+  }
+  v.querySelectorAll("[data-kick]").forEach((b) => { b.onclick = () => hostKick(b.dataset.kick); });
   const pass = $("onPass");
   if (pass) pass.onclick = () => {
     const vals = [...v.querySelectorAll(".on-w")].map((inp) => inp.value);
@@ -1876,7 +1946,7 @@ const G = {
   onState: () => ({
     phase: ON.phase, code: ON.code, players: ON.players, view: ON.view,
     local: ON.local, scores: ON.scores, msg: ON.msg, host: ON.host, me: ON.me,
-    rows: ON.rows, section: ON.section, done: ON.done,
+    rows: ON.rows, section: ON.section, done: ON.done, order: ON.order, banned: ON.banned.size,
     turn: ON.turn ? { phase: ON.turn.phase, writerId: ON.turn.writerId, checkerId: ON.turn.checkerId } : null,
   }),
 };

@@ -906,3 +906,19 @@ table.on-table {
 @media (max-width: 700px) {
   .field-row select { padding: 11px 38px 11px 12px; background-position: right 11px center; }
 }
+
+/* ============ 🌐 ONLINE — expulsar (kick/ban) ============ */
+.on-chip { display: inline-flex; align-items: center; gap: 7px; }
+.on-x {
+  width: 26px; height: 26px;
+  border-radius: 50%;
+  border: 1px solid rgba(236, 128, 128, 0.5);
+  background: transparent;
+  color: var(--bad);
+  font-size: 12px; font-weight: 800; line-height: 1;
+  cursor: pointer; padding: 0;
+  display: inline-grid; place-items: center;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.on-x:hover { background: rgba(236, 128, 128, 0.18); border-color: var(--bad); }
+.on-x:focus-visible { outline: 2px solid var(--bad); outline-offset: 1px; }

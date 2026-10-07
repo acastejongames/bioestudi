@@ -62,6 +62,10 @@ La targeta **Online · sala amb codi** obre una sala multijugador **en línia** 
 - Després del veredicte — **bo o dolent** — es revela el **text real** al costat del que s'havia escrit, amb el % de cobertura, per a tots els jugadors.
 - Puntuació: escriptor correcte **+100**, revisor coherent amb l'estimació automàtica **+60**; XP final = punts/10. Si algú marxa, la sala es tanca avisant a la resta.
 
+## 🎨 Disseny
+
+Identitat visual pròpia "tinta verda": fons verd fosc amb trama de punts subtil, títols amb la tipografia display **Fraunces** (serif editorial), paleta de molsa, ori i terracota (sense neons ni degradats genèrics), iconografia **SVG monoline** coherent (cap emoji decoratiu a les graelles), botons i targetes amb estats clars de hover/tacte, focus visible per a teclat i `prefers-reduced-motion` respectat. En mòbil: taules→targetes, HUD enganxat, inputs a 16 px (sense zoom iOS) i zona segura `env(safe-area-inset)`.
+
 ## 🌍 Publicació (GitHub Pages)
 
 El lloc està preparat per a GitHub Pages: fitxers estàtics a l'arrel, `.nojekyll` present i **rutes relatives** (funciona sota `https://acastejongames.github.io/bioestudi/`).

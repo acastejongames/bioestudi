@@ -84,7 +84,7 @@ function confetti(n = 90) {
     vx: (Math.random() - 0.5) * 3.4, vy: 2 + Math.random() * 4,
     s: 5 + Math.random() * 7, r: Math.random() * Math.PI,
     vr: (Math.random() - 0.5) * 0.3,
-    c: ["#7c5cff", "#00d4ff", "#9ef01a", "#ffd166", "#ff5d73"][rnd(5)],
+    c: ["#8ec98a", "#e6b95c", "#7fb6c9", "#ec8080", "#d99a76"][rnd(5)],
     life: 1,
   });
   if (!fxRaf) fxLoop();
@@ -552,13 +552,13 @@ function startMode(mode, customList, label, section) {
   R.hits = 0; R.total = 0; R.hearts = 3; R.missed = [];
   show("game");
   let modeLabel = label || {
-    session: "🎒 Sessió de 20 min", arcade: "⚡ Missió ràpida", match: "🧪 Parells explosius",
-    test: "📝 Mini test COMPROVA'T", review: "⭐ Repàs espaiat", teach: "🎓 Explica-ho a algú",
-    orgmix: "🧩 Ordre & conceptes", retry: "🔁 Torna a provar-les",
+    session: "Sessió de 20 min", arcade: "Missió ràpida", match: "Parells explosius",
+    test: "Mini test COMPROVA'T", review: "Repàs espaiat", teach: "Explica-ho a algú",
+    orgmix: "Ordre & conceptes", retry: "Torna a provar-les",
   }[mode] || mode;
   if (R.section && !label) {
     const sd = secDef(R.section);
-    if (sd) modeLabel += " · " + sd.ico + " " + sd.title;
+    if (sd) modeLabel += " · " + sd.title;
   }
   $("gMode").textContent = modeLabel;
   render();
@@ -988,7 +988,7 @@ function renderHome() {
     const d = document.createElement("button");
     d.className = "sec-card sc" + (i + 1);
     d.innerHTML = `
-      <div class="sec-top"><span class="sec-ico">${sec.ico}</span>
+      <div class="sec-top"><span class="sec-ico">${secSvg(sec.id)}</span>
         <span class="sec-name">${esc(sec.title)}</span>
         <span class="sec-arrow">→</span></div>
       <div class="sec-sub">${esc(sec.sub)}</div>
@@ -1063,7 +1063,7 @@ function renderSection(sec) {
   $("secView").innerHTML = `
     <div class="sec-head">
       <button class="btn btn-ghost" id="secBack">← Seccions</button>
-      <div class="sec-title"><span class="sec-ico big">${sec.ico}</span> ${esc(sec.title)}</div>
+      <div class="sec-title"><span class="sec-ico big">${secSvg(sec.id)}</span>${esc(sec.title)}</div>
       <div class="sec-stats">
         <span>${pct}% dominat</span><span>${m.dom}/${m.total} ben apreses</span>${dueHere ? `<span>⭐ ${dueHere} per repassar</span>` : ""}
       </div>
@@ -1071,7 +1071,7 @@ function renderSection(sec) {
     </div>
 
     <div class="sec-actions">
-      ${actions.map((a) => `<button class="btn btn-sec" data-mode="${a.mode}">${a.ico} ${a.label}</button>`).join("")}
+      ${actions.map((a) => `<button class="btn btn-sec" data-mode="${a.mode}">${a.label}</button>`).join("")}
     </div>
 
     <div class="truc-box">💡 <b>Truc:</b> ${esc(sec.truc)}</div>
@@ -1529,6 +1529,19 @@ function renderOnHub(v) {
   if (cr) cr.onclick = () => onlineCreate($("onHostName").value, null, $("onHubSection") ? $("onHubSection").value : "mix");
   const jn = $("onJoin");
   if (jn) jn.onclick = () => onlineJoin($("onJoinCode").value, $("onJoinName").value);
+}
+/* icones SVG de secció (monoline) — identitat visual pròpia, sense emojis */
+const SEC_SVG = {
+  organitzacio: '<path d="M7 2.5c0 4.6 10 5.4 10 9.5s-10 4.9-10 9.5"/><path d="M17 2.5c0 4.6-10 5.4-10 9.5s10 4.9 10 9.5"/><path d="M8.5 6.5h7M7.5 12h9M8.5 17.5h7"/>',
+  minerals: '<path d="M12 2.5l7.5 5.5L16 21.5H8L4.5 8z"/><path d="M4.5 8h15M12 2.5 9 8l3 13.5L15 8z"/>',
+  hidro: '<g transform="rotate(-45 12 12)"><rect x="2.5" y="8.5" width="19" height="7" rx="3.5"/><path d="M12 8.5v7"/></g>',
+  lipo: '<circle cx="12" cy="12" r="4"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.2 5.2l2.1 2.1M16.7 16.7l2.1 2.1M18.8 5.2l-2.1 2.1M7.3 16.7l-2.1 2.1"/>',
+  nutrients: '<path d="M12 21V9.5"/><path d="M12 9.5c0-3.2 2-5.8 5.2-6.8.6 3.6-1.1 6.8-5.2 6.8zM12 9.5C12 6.3 10 3.7 6.8 2.7c-.6 3.6 1.1 6.8 5.2 6.8z"/><path d="M12 14.5c0-2.7 1.7-4.9 4.4-5.7.5 3.1-1.1 5.7-4.4 5.7zM12 14.5c0-2.7-1.7-4.9-4.4-5.7-.5 3.1 1.1 5.7 4.4 5.7z"/>',
+};
+function secSvg(id, cls) {
+  const paths = SEC_SVG[id];
+  if (!paths) return "";
+  return `<svg class="svg-ico${cls ? " " + cls : ""}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths}</svg>`;
 }
 function sectionLabel(id) {
   if (!id || id === "mix") return "🎲 Barreja (totes les seccions)";

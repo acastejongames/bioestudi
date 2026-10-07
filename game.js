@@ -967,6 +967,7 @@ function finish() {
 /* ============ navegació / home ============ */
 function show(which) {
   ["home", "game", "result", "section"].forEach((s) => { $("screen-" + s).hidden = s !== which; });
+  document.body.dataset.screen = which;
   if (which !== "game") clearTimers();
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
@@ -1053,7 +1054,7 @@ function renderSection(sec) {
         <table class="sheet cover" id="secSheet">
           <thead><tr>${sheet.cols.map((c) => `<th>${esc(c)}</th>`).join("")}</tr></thead>
           <tbody>
-            ${sheet.rows.map((r) => `<tr>${r.map((c, ci) => `<td${ci > 0 ? ' class="ans"' : ""}><span class="v">${esc(c)}</span></td>`).join("")}</tr>`).join("")}
+            ${sheet.rows.map((r) => `<tr>${r.map((c, ci) => `<td${ci > 0 ? ` class="ans" data-th="${esc(sheet.cols[ci])}"` : ""}><span class="v">${esc(c)}</span></td>`).join("")}</tr>`).join("")}
           </tbody>
         </table>
       </div>`;
@@ -1152,6 +1153,13 @@ function init() {
       location.reload();
     }
   };
+  /* text del consell segons dispositiu */
+  try {
+    if (window.matchMedia && matchMedia("(pointer: coarse)").matches) {
+      const h = document.querySelector("#screen-game .hint");
+      if (h) h.textContent = "Toca la resposta correcta i després «Següent» per continuar";
+    }
+  } catch (e) {}
   renderHome();
   show("home");
 }

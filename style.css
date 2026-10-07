@@ -15,6 +15,7 @@
   --grad: linear-gradient(92deg, #7c5cff, #00d4ff 55%, #9ef01a);
   --radius: 18px;
   --shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
+  --bleed: clamp(16px, 3vw, 34px);
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html { -webkit-text-size-adjust: 100%; }
@@ -26,7 +27,7 @@ body {
     var(--bg);
   color: var(--txt);
   min-height: 100vh;
-  overflow-x: hidden;
+  overflow-x: clip; /* clip (no hidden) perquè el HUD sticky de mòbil funcioni */
 }
 #fx { position: fixed; inset: 0; pointer-events: none; z-index: 99; }
 
@@ -123,7 +124,10 @@ footer { text-align: center; color: var(--mut); font-size: 12px; padding: 26px 1
 
 /* ===== joc ===== */
 .game-hud { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
-.g-mode { font-weight: 700; color: var(--c2); flex: 1; font-size: 15px; }
+.g-mode {
+  font-weight: 700; color: var(--c2); flex: 1; min-width: 0; font-size: 15px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 .g-score { font-size: 17px; font-weight: 700; }
 .g-combo { font-weight: 800; color: var(--gold); animation: pulse 0.7s ease infinite alternate; }
 @keyframes pulse { to { transform: scale(1.12); } }
@@ -253,6 +257,18 @@ footer { text-align: center; color: var(--mut); font-size: 12px; padding: 26px 1
 .btn-no { background: rgba(255, 93, 115, 0.16); border-color: var(--bad); color: var(--bad); }
 .btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
 
+/* tacte: respostes grans i feedback ràpid */
+.opt, .btn, .chip, .mitem, .mode-card, .sec-card {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+.q-actions .btn { flex: 1 1 auto; text-align: center; }
+.opt, .chip, .mitem, .btn:not(.btn-small):not(.btn-ghost) { min-height: 46px; }
+@media (hover: none) {
+  .opt:active, .btn:active, .chip:active, .mitem:active { transform: scale(0.98); }
+  .mode-card:active, .sec-card:active { transform: scale(0.985); }
+}
+
 /* ===== seccions ===== */
 .sec-intro { color: var(--mut); font-size: 13.5px; margin: -6px 0 14px; }
 .modes h2 { grid-column: 1 / -1; font-size: 20px; margin-bottom: 2px; }
@@ -362,5 +378,110 @@ table.sheet.cover td.ans.rev .v { filter: none; opacity: 1; }
 @media (max-width: 640px) {
   .logo i { display: none; }
   .match-grid { grid-template-columns: 1fr; }
-  .g-mode { order: 5; flex-basis: 100%; }
+}
+
+/* ===== mòbil ===== */
+@media (max-width: 700px) {
+  main { padding-left: var(--bleed); padding-right: var(--bleed); }
+
+  /* barra superior compacta */
+  .topbar { padding: 8px var(--bleed); }
+  .logo { font-size: 16px; gap: 5px; }
+  .hud { gap: 6px; }
+  .hud-pill { padding: 5px 9px; font-size: 12.5px; }
+
+  /* dins del joc, el HUD del joc pren el relleu (sticky a dalt) */
+  body[data-screen="game"] > .topbar { display: none; }
+  .game-top {
+    position: sticky; top: 0; z-index: 60;
+    background: rgba(11, 16, 32, 0.94);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    padding: 8px var(--bleed) 10px;
+    margin: -4px calc(-1 * var(--bleed)) 0;
+  }
+  .game-hud { gap: 8px; margin-bottom: 8px; padding-top: 2px; }
+  .game-hud #quitBtn .lbl-sm { display: none; }
+  .g-mode { font-size: 13.5px; }
+  .g-score { font-size: 15px; }
+  .g-combo { font-size: 13.5px; }
+  .g-hearts { font-size: 15px; letter-spacing: 1px; }
+
+  /* targeta de pregunta */
+  .qcard { padding: 16px; border-radius: 18px; min-height: 280px; margin-top: 14px; gap: 13px; }
+  .q-prompt { font-size: 18px; }
+  .q-kind { font-size: 10.5px; padding: 4px 10px; }
+  .opt { font-size: 15px; padding: 12px 14px; border-radius: 12px; }
+  .flash-front { padding: 20px 14px; font-size: 22px; }
+  .flash-row { padding: 11px 13px; }
+  .q-feedback { font-size: 14.5px; padding: 11px 13px; }
+  .hint { font-size: 11.5px; margin-top: 10px; }
+
+  /* portada:1 columna còmoda */
+  .modes, .sec-grid { gap: 11px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr)); }
+  .mode-card, .sec-card { padding: 14px 15px; }
+  .mode-ico { font-size: 27px; }
+  .mode-name, .sec-name { font-size: 15.5px; }
+  .hero h1 { font-size: clamp(27px, 8vw, 40px); }
+  .due-banner { font-size: 13px; padding: 10px 14px; }
+
+  /* taula d'estudi → targetes apilades (llegeix bé en vertical) */
+  .sheet-wrap { overflow-x: visible; border: none; }
+  table.sheet { min-width: 0; display: block; font-size: 14.5px; }
+  table.sheet thead { display: none; }
+  table.sheet tbody { display: block; }
+  table.sheet tr {
+    display: block; background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--card-brd); border-radius: 14px;
+    margin-bottom: 11px; padding: 3px 2px;
+  }
+  table.sheet td {
+    display: flex; flex-direction: column; gap: 3px;
+    padding: 9px 14px; border-bottom: none; white-space: normal;
+  }
+  table.sheet td:first-child {
+    font-size: 16.5px; color: var(--c2); padding-bottom: 7px;
+    border-bottom: 1px dashed rgba(255, 255, 255, 0.14);
+  }
+  table.sheet td.ans { padding-top: 8px; cursor: pointer; }
+  table.sheet td.ans::before {
+    content: attr(data-th);
+    font-size: 10.5px; font-weight: 800; letter-spacing: 0.8px;
+    text-transform: uppercase; color: var(--mut);
+  }
+  table.sheet tbody tr:hover { background: rgba(255, 255, 255, 0.05); }
+
+  /* secció */
+  .sec-title { font-size: 21px; }
+  .sec-stats { font-size: 12px; gap: 8px; }
+  .sec-stats span { padding: 3px 9px; }
+  .sec-actions { gap: 8px; }
+  .btn-sec { flex: 1 1 calc(50% - 8px); min-width: calc(50% - 8px); justify-content: center; font-size: 13.5px; padding: 12px 10px; }
+  .cover-bar { margin-top: 14px; }
+  .cover-hint { min-width: 100%; font-size: 12.5px; }
+  .truc-box, .conf-box { padding: 11px 13px; font-size: 13.5px; margin-bottom: 9px; }
+  .sec-tip { font-size: 12.5px; padding: 10px 12px; }
+
+  /* parells a1 columna */
+  .match-grid { grid-template-columns: 1fr; }
+  .mitem { font-size: 14.5px; }
+
+  /* resultat */
+  .result-card { padding: 24px 15px; border-radius: 20px; margin-top: 16px; }
+  .result-emoji { font-size: 52px; }
+  .result-stats { gap: 16px; }
+  .rstat b { font-size: 26px; }
+  .rline { font-size: 13.5px; padding: 10px 12px; }
+  .result-actions { flex-direction: column; }
+  .result-actions .btn { width: 100%; }
+
+  .stars-note, .due-banner { text-align: center; }
+}
+
+/* mòbil horitzontal: menys alçada, targeta més compacta */
+@media (max-width: 900px) and (max-height: 500px) and (orientation: landscape) {
+  .qcard { min-height: 0; padding: 13px 16px; }
+  .hero { margin-top: 6px; }
+  .hero h1 { font-size: clamp(22px, 5vw, 30px); }
+  .hint { display: none; }
 }

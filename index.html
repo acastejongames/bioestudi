@@ -5,6 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>BIOESTUDI · El joc de la memòria</title>
   <meta name="theme-color" content="#0b1020" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="format-detection" content="telephone=no" />
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🧬</text></svg>" />
   <link rel="stylesheet" href="style.css" />
 </head>
@@ -89,15 +93,17 @@
 
     <!-- ============ JOC ============ -->
     <section id="screen-game" class="screen" hidden>
-      <div class="game-hud">
-        <button class="btn btn-ghost" id="quitBtn">✕ Sortir</button>
-        <div class="g-mode" id="gMode">Sessió</div>
-        <div class="g-score">⭐ <b id="gScore">0</b></div>
-        <div class="g-combo" id="gCombo" hidden>🔥 x1</div>
-        <div class="g-hearts" id="gHearts"></div>
+      <div class="game-top">
+        <div class="game-hud">
+          <button class="btn btn-ghost" id="quitBtn">✕<span class="lbl-sm"> Sortir</span></button>
+          <div class="g-mode" id="gMode">Sessió</div>
+          <div class="g-score">⭐ <b id="gScore">0</b></div>
+          <div class="g-combo" id="gCombo" hidden>🔥 x1</div>
+          <div class="g-hearts" id="gHearts"></div>
+        </div>
+        <div class="progress"><div class="progress-fill" id="gProgress"></div></div>
+        <div class="timer" id="gTimerWrap" hidden><div class="timer-fill" id="gTimer"></div></div>
       </div>
-      <div class="progress"><div class="progress-fill" id="gProgress"></div></div>
-      <div class="timer" id="gTimerWrap" hidden><div class="timer-fill" id="gTimer"></div></div>
 
       <div class="qcard" id="qcard">
         <div class="q-kind" id="qKind">Pregunta</div>

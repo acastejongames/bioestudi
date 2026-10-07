@@ -1,7 +1,15 @@
 /* Prova headless de BIOESTUDI amb jsdom */
 const fs = require("fs");
 const path = require("path");
-const { JSDOM } = require("/tmp/harness/node_modules/jsdom");
+function loadJsdom() {
+  const candidates = ["/tmp/harness/node_modules/jsdom", "jsdom"];
+  for (const c of candidates) {
+    try { return require(c); } catch (e) { /* next */ }
+  }
+  console.error("FALTA jsdom. Executa: npm install --prefix /tmp/harness jsdom");
+  process.exit(2);
+}
+const { JSDOM } = loadJsdom();
 
 const REPO = "/home/user/bioestudi";
 const html = fs.readFileSync(path.join(REPO, "index.html"), "utf8");
@@ -88,6 +96,8 @@ function checkNoRepeats(mode) {
   check(!window.document.getElementById("screen-home").hidden, "home visible en iniciar");
   check(window.document.querySelectorAll(".mode-card").length === 6, "6 modes a la portada");
   check(window.document.querySelectorAll("#secGrid .sec-card").length === 5, "5 seccions a la portada");
+  check(window.document.body.dataset.screen === "home", "body[data-screen]=home en iniciar");
+  check(window.document.querySelector("#screen-game .game-top #gProgress"), "HUD + progress dins del contenidor .game-top (per a sticky al mòbil)");
 
   // confeti / efectes (detecta símbols no declarats com fxBroken)
   console.log("\n== confeti / efectes ==");
@@ -141,8 +151,11 @@ function checkNoRepeats(mode) {
     G.openSection(sec.id);
     const scr = window.document.getElementById("screen-section");
     check(!scr.hidden, `secció ${sec.id}: pantalla oberta`);
+    check(window.document.body.dataset.screen === "section", `secció ${sec.id}: body[data-screen]=section`);
     const rows = window.document.querySelectorAll("#secSheet tbody tr").length;
     check(rows === ROWS[sec.id], `secció ${sec.id}: taula amb ${rows}/${ROWS[sec.id]} files`);
+    const ansCells = [...window.document.querySelectorAll("#secSheet td.ans")];
+    check(ansCells.length > 0 && ansCells.every((td) => td.dataset.th), `secció ${sec.id}: cel·les amb data-th per a les targetes del mòbil`);
     check(window.document.getElementById("secSheet").classList.contains("cover"), `secció ${sec.id}: taula coberta per defecte`);
     const btns = [...window.document.querySelectorAll(".btn-sec")].map((b) => b.dataset.mode);
     check(btns.includes("arcade") && btns.includes("session"), `secció ${sec.id}: botons de joc (${btns.join(",")})`);
@@ -205,6 +218,7 @@ function checkNoRepeats(mode) {
 
   // sortir d'una partida de secció torna a la secció
   G.startMode("arcade", null, null, "minerals");
+  check(window.document.body.dataset.screen === "game", "body[data-screen]=game durant la partida (amaga la barra superior al mòbil)");
   window.document.getElementById("quitBtn").click();
   check(!window.document.getElementById("screen-section").hidden, "sortir d'una partida de secció torna a la secció");
   check(window.document.getElementById("secView").textContent.includes("Sals minerals"), "la secció de tornada és Sals minerals");

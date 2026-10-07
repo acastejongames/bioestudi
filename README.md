@@ -46,6 +46,10 @@ Cada secció té la **taula d'estudi completa** amb el mecanisme *tapa i recorda
 
 El progrés (XP, nivell, ratxa, % per secció i repàs espaiat) es desa a `localStorage`.
 
+## 📱 Mòbil
+
+Adaptat per a pantalles petites: les taules d'estudi es converteixen en **targetes apilades**, el HUD del joc queda **enganxat a dalt** (la barra superior s'oculta durant la partida), zones de toc ≥ 46 px, botons a mida de polze i consells pensats per a pantalla tàctil.
+
 ## 🌍 Publicació (GitHub Pages)
 
 El lloc està preparat per a GitHub Pages: fitxers estàtics a l'arrel, `.nojekyll` present i **rutes relatives** (funciona sota `https://acastejongames.github.io/bioestudi/`).
@@ -58,4 +62,4 @@ Fonts de desplegament: branca `arena/062a1875-bioestudi` → arrel (`/`).
 node test/headless.js   # requereix jsdom (npm i jsdom)
 ```
 
-Recorre tots els modes i seccions, comprova puntuació, estrelles ⭐, repàs espaiat, taules de secció, filtratge de preguntes per secció, **absència de preguntes repetides dins de cada partida** i la interacció real amb la UI (**112 comprovacions**).
+Recorre tots els modes i seccions, comprova puntuació, estrelles ⭐, repàs espaiat, taules de secció, filtratge de preguntes per secció, **absència de preguntes repetides dins de cada partida**, l'estructura mòbil (`data-th`, `data-screen`, `.game-top`) i la interacció real amb la UI (**125 comprovacions**).
